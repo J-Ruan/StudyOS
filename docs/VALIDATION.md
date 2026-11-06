@@ -30,6 +30,10 @@
 
 截图位于 `docs/screenshots/`，均来自实际运行页面和虚拟示例数据。首次界面保持空库，示例不会自动注入。
 
+## 远端运行器
+
+首次 GitHub Actions 运行在已迁移到 Ubuntu 26 的 `ubuntu-latest` 上，浏览器系统依赖安装步骤失败。工作流已固定为 Playwright 1.56 支持的 `ubuntu-24.04`；保留全部检查和发布门槛，不跳过浏览器测试。
+
 ## 范围限制
 
 - 已在 Linux Chromium 中实际验证响应式尺寸；未把模拟宽度称为真实 Android、Windows 或平板硬件测试。
