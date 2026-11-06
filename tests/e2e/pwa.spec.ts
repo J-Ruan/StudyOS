@@ -52,6 +52,8 @@ test('PWA 更新等待确认，应用壳与缓存成套切换，用户数据保�
     await page.getByRole('button', { name: '新建任务', exact: true }).click();
     await page.getByLabel('任务标题').fill('升级后保留');
     await page.getByRole('button', { name: '保存', exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByText('升级后保留', { exact: true })).toBeVisible();
     await page.evaluate(() => navigator.serviceWorker.ready);
     await page.reload();
     await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);

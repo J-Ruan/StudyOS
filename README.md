@@ -86,7 +86,7 @@ Android Chromium 通过浏览器菜单「安装应用 / 添加到主屏幕」，
 
 ## GitHub Actions 与发布
 
-推送和 PR 会执行类型检查、ESLint、单元/集成测试、生产构建与 Chromium 端到端测试。`main` 校验成功后部署 GitHub Pages；`v*` 标签校验成功后创建中文 Release 并附上生产构建 ZIP。
+推送和 PR 会执行类型检查、ESLint、单元/集成测试、生产构建与 Chromium 端到端测试。CI 固定 Ubuntu 24.04，并使用运行器预装的 Google Chrome，避免安装不兼容的系统浏览器依赖。`main` 校验成功后部署 GitHub Pages；`v*` 标签校验成功后创建中文 Release 并附上生产构建 ZIP。
 
 仓库需允许 GitHub Actions。Pages 使用 GitHub Actions 作为发布来源，工作流会尝试自动启用；若仓库策略拒绝启用，需要仓库管理员在 **Settings → Pages → Source → GitHub Actions** 开启后重跑部署任务。Release 工作流需要仓库授予 `contents: write` 权限。
 

@@ -5,7 +5,7 @@
 ## 环境与命令
 
 - Node.js 24.22.1、npm 11.9.0、Linux。
-- Chromium 156.0.8078.79；Playwright 1.56.1。
+- Chromium 156.0.8078.79；Playwright 1.65.0。
 - `npm ci --no-audit --fund=false` 从锁文件重新安装成功。
 - `npm run check` 顺序完成类型检查、ESLint、37 项单元/数据集成测试、生产构建、17 条 Chromium 端到端测试，全部通过。
 - `npm run format:check` 通过。
@@ -32,7 +32,7 @@
 
 ## 远端运行器
 
-首次 GitHub Actions 运行在已迁移到 Ubuntu 26 的 `ubuntu-latest` 上，浏览器系统依赖安装步骤失败。工作流已固定为 Playwright 1.56 支持的 `ubuntu-24.04`；保留全部检查和发布门槛，不跳过浏览器测试。
+首次 GitHub Actions 运行在已迁移到 Ubuntu 26 的 `ubuntu-latest` 上，浏览器系统依赖安装步骤失败。工作流已固定为 受支持的 `ubuntu-24.04`；CI 使用运行器预装的 Chrome，并输出 GitHub 失败注释。更新测试先确认数据库保存完成再刷新；保留全部检查和发布门槛。
 
 ## 范围限制
 
