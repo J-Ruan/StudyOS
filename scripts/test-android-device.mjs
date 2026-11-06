@@ -10,6 +10,7 @@ const [device] = await _android.devices();
 assert(device, 'No Android emulator/device attached');
 device.setDefaultTimeout(60000);
 let page;
+let phase = 'connect-device';
 const notes = [];
 const check = (label) => {
   notes.push(label);
@@ -34,14 +35,19 @@ const dbRows = (table) =>
     table,
   );
 async function open(path) {
+  phase = `navigate:${path}`;
   await page.evaluate((path) => {
     location.hash = path;
   }, path);
   await page.locator('main').waitFor();
 }
 async function save() {
+  const dialogs = page.getByRole('dialog');
+  const title = (await dialogs.count()) ? await dialogs.last().getAttribute('aria-label') : 'page';
+  phase = `save:${title}`;
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  phase = `saved:${title}`;
 }
 
 async function pollNative(predicate, description, timeout = 15000) {
@@ -161,9 +167,16 @@ try {
   await page.getByText('Android 离线任务', { exact: true }).waitFor();
   check('Task creation and persistence');
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
-  // Android consumes Back for the IME before dispatching it to the activity.
-  await page.evaluate(() => window.Capacitor.Plugins.Keyboard.hide());
-  await page.waitForTimeout(350);
+  // Blur prevents the input from reopening the IME; keyboardDidHide updates the
+  // runtime dataset. Await that state rather than guessing an animation duration.
+  phase = 'back:empty-task:hide-ime';
+  await page.getByRole('dialog', { name: '新建任务', exact: true }).waitFor();
+  await page.evaluate(async () => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    await window.Capacitor.Plugins.Keyboard.hide();
+  });
+  await page.waitForFunction(() => document.documentElement.dataset.keyboard !== 'true');
+  phase = 'back:empty-task:dispatch';
   await device.shell('input keyevent 4');
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   check('Android back closes an empty modal first');
@@ -220,8 +233,55 @@ try {
     JSON.stringify({ platform: 'Android emulator', checks: notes, physicalDevice: false }, null, 2),
   );
 } catch (error) {
-  const detail = String(error)
-    .slice(0, 6000)
+  const browserState = page
+    ? await page
+        .evaluate(() => {
+          const active = document.activeElement;
+          const controls = [
+            ...document.querySelectorAll('input:invalid, select:invalid, textarea:invalid'),
+          ].slice(0, 15);
+          return {
+            hash: location.hash,
+            keyboard: document.documentElement.dataset.keyboard ?? 'hidden-or-unreported',
+            active: active
+              ? {
+                  tag: active.tagName,
+                  type: active.getAttribute('type'),
+                  role: active.getAttribute('role'),
+                  ariaLabel: active.getAttribute('aria-label'),
+                }
+              : null,
+            modals: [...document.querySelectorAll('[role=dialog]')]
+              .map((node) => node.getAttribute('aria-label'))
+              .slice(0, 10),
+            invalid: controls.map((control) => ({
+              tag: control.tagName,
+              type: control.getAttribute('type'),
+              label: control.labels?.[0]?.textContent?.trim().slice(0, 120),
+              validationMessage: control.validationMessage?.slice(0, 400),
+            })),
+            alerts: [...document.querySelectorAll('[role=alert]')]
+              .map((node) => node.textContent?.trim().slice(0, 600))
+              .slice(0, 5),
+            forms: [...document.querySelectorAll('form')]
+              .map((node) => ({
+                busy: node.getAttribute('aria-busy'),
+                unsaved: node.getAttribute('data-unsaved'),
+              }))
+              .slice(0, 10),
+          };
+        })
+        .catch((captureError) => ({ captureError: String(captureError) }))
+    : null;
+  const diagnostics = {
+    phase,
+    passed: notes,
+    error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    browser: browserState,
+  };
+  await writeFile(`${output}/failure-diagnostics.json`, JSON.stringify(diagnostics, null, 2));
+  const detail = JSON.stringify(diagnostics)
+    .slice(0, 14000)
     .replaceAll('%', '%25')
     .replaceAll('\r', '%0D')
     .replaceAll('\n', '%0A');
