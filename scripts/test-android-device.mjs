@@ -161,6 +161,9 @@ try {
   await page.getByText('Android 离线任务', { exact: true }).waitFor();
   check('Task creation and persistence');
   await page.getByRole('button', { name: '新建任务', exact: true }).click();
+  // Android consumes Back for the IME before dispatching it to the activity.
+  await page.evaluate(() => window.Capacitor.Plugins.Keyboard.hide());
+  await page.waitForTimeout(350);
   await device.shell('input keyevent 4');
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   check('Android back closes an empty modal first');
@@ -217,6 +220,12 @@ try {
     JSON.stringify({ platform: 'Android emulator', checks: notes, physicalDevice: false }, null, 2),
   );
 } catch (error) {
+  const detail = String(error)
+    .slice(0, 6000)
+    .replaceAll('%', '%25')
+    .replaceAll('\r', '%0D')
+    .replaceAll('\n', '%0A');
+  console.log(`::error title=Android emulator smoke::${detail}`);
   await device.screenshot({ path: `${output}/native-failure.png` }).catch(() => {});
   await device.shell('uiautomator dump /sdcard/studyos-test-window.xml').catch(() => {});
   const nativeTree = await device

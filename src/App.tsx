@@ -366,10 +366,22 @@ export default function App() {
     </UIContext.Provider>
   );
 }
-export class ErrorBoundary extends Component<{ children: ReactNode }, { error: string }> {
-  state = { error: '' };
+export class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: string; nativeError: string }
+> {
+  state = { error: '', nativeError: '' };
   static getDerivedStateFromError(error: Error) {
     return { error: error.message };
+  }
+  componentDidCatch() {
+    // App may fail before its loaded effect runs (for example, IndexedDB is
+    // unavailable). Reveal this boundary's recovery UI in that case as well.
+    void finishNativeLaunch().catch((error: unknown) => {
+      this.setState({
+        nativeError: error instanceof Error ? error.message : '请重新打开应用后重试',
+      });
+    });
   }
   render() {
     return this.state.error ? (
@@ -378,6 +390,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: s
         <h1>暂时无法打开学序</h1>
         <p>{this.state.error}</p>
         <p>请检查浏览器是否允许本地存储。现有数据不会被自动清除。</p>
+        {this.state.nativeError && <p role="alert">启动页关闭失败：{this.state.nativeError}</p>}
         <Button onClick={() => location.reload()}>重新加载</Button>
       </div>
     ) : (

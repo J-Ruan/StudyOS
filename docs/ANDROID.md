@@ -99,7 +99,7 @@ Debug APK 默认位于 `android/app/build/outputs/apk/debug/app-debug.apk`；签
 
 ## CI 与发布
 
-PR、`main`、`feat/android-apk`、新版本标签和手动触发均会执行 Android 构建。Web 校验、Android APK 构建检查和模拟器验证通过后，`v*` 标签工作流才创建新 Release，附带 Web ZIP 与选定签名模式的 APK。版本标签必须与 `package.json` 对应，已有正式 Release 会拒绝覆盖。
+PR、`main`、新版本标签和手动触发均会执行 Android 构建。Web 校验、Android APK 构建检查和模拟器验证通过后，`v*` 标签工作流才创建新 Release，附带 Web ZIP 与选定签名模式的 APK。版本标签必须与 `package.json` 对应，已有正式 Release 会拒绝覆盖。
 
 GitHub Pages 延续原来的 Web 构建与部署任务，不使用 Android 相对路径产物。Android 工程不会更改 Web 用户数据。
 

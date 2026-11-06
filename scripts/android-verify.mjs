@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 const apk = process.argv[2];
@@ -8,11 +8,9 @@ if (!apk || !existsSync(apk))
 const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
 if (!sdk) throw new Error('Set ANDROID_HOME or ANDROID_SDK_ROOT to an installed Android SDK.');
 const builds = join(sdk, 'build-tools');
-const latest = readdirSync(builds)
-  .filter((v) => existsSync(join(builds, v, 'apksigner')))
-  .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-  .at(-1);
-if (!latest) throw new Error('Android build-tools with apksigner and aapt2 are required.');
+const latest = '36.0.0';
+if (!existsSync(join(builds, latest, 'apksigner')))
+  throw new Error('Install pinned Android build-tools 36.0.0 before APK verification.');
 const bin = (name) => join(builds, latest, name);
 const file = resolve(apk);
 const info = execFileSync(bin('aapt2'), ['dump', 'badging', file], { encoding: 'utf8' });
