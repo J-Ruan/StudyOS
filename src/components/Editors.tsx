@@ -324,7 +324,18 @@ function CourseEditor({ editor }: { editor: Editor }) {
                 <div key={m.id}>
                   <FileText size={18} />
                   {m.data ? (
-                    <button className="text-button" onClick={() => download(m.data!, m.name)}>
+                    <button
+                      className="text-button"
+                      onClick={async () => {
+                        try {
+                          await download(m.data!, m.name);
+                        } catch (error) {
+                          ui.notify(
+                            error instanceof Error ? error.message : '无法打开资料，请重试',
+                          );
+                        }
+                      }}
+                    >
                       {m.name}
                     </button>
                   ) : (

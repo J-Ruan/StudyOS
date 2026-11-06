@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    name: 类型、检查、测试与构建
+    name: 类型、检查、测试与 Web 构建
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,8 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npm run build:android:web
+      - run: npm run test:android:web
       - name: 使用运行器预装 Chrome
         run: google-chrome --version
       - run: npm run test:e2e
@@ -46,6 +48,135 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: dist/
+  android:
+    name: Android APK 构建与检查
+    runs-on: ubuntu-24.04
+    outputs:
+      signing: ${{ steps.signing.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+      - name: 安装 Android SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'platform-tools'
+      - run: npm ci --no-audit --fund=false
+      - run: npm run build:android:web
+      - run: npx cap sync android
+      - name: 检查签名配置完整性
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_BASE64 || '' }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEYSTORE_PASSWORD || '' }}
+          ANDROID_KEY_ALIAS: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_ALIAS || '' }}
+          ANDROID_KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.ANDROID_KEY_PASSWORD || '' }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
+            echo 'mode=release' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=debug' >> "$GITHUB_OUTPUT"
+            echo '未提供完整正式签名配置，将生成明确标注的 Debug APK。' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: 构建可安装 Debug APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+      - name: 检查 Debug APK
+        run: node scripts/android-verify.mjs android/app/build/outputs/apk/debug/app-debug.apk
+      - name: 构建正式签名 Release APK
+        if: steps.signing.outputs.mode == 'release'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/studyos-release.jks
+        run: |
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          unset ANDROID_KEYSTORE_BASE64
+          cd android
+          ./gradlew --no-daemon assembleRelease
+      - name: 检查正式签名 APK
+        if: steps.signing.outputs.mode == 'release'
+        run: node scripts/android-verify.mjs android/app/build/outputs/apk/release/app-release.apk --release
+      - name: 归档 APK
+        env:
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          mkdir -p apk
+          if [ "$SIGNING_MODE" = release ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "apk/StudyOS-v${version}-android.apk"
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk "apk/StudyOS-v${version}-android-debug.apk"
+          fi
+          printf 'APK 签名模式：%s\n' "$SIGNING_MODE" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: apk/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+      - name: 移除临时正式签名文件
+        if: always()
+        run: rm -f "$RUNNER_TEMP/studyos-release.jks"
+  android-smoke:
+    name: Android 模拟器功能与离线验证
+    needs: [verify, android]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci --no-audit --fund=false
+      - name: 安装原生系统选择器测试驱动
+        run: npx playwright install android
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-smoke-apk
+          path: android/app/build/outputs/apk/debug/
+      - name: 开启运行器 KVM 设备访问
+        run: |
+          test -e /dev/kvm
+          sudo chmod a+rw /dev/kvm
+      - name: 安装 APK 并验证原生 WebView
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -camera-back none
+          script: npm run test:android:device
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-device-results
+          path: android-device-results/
+          if-no-files-found: warn
+          retention-days: 7
   pages:
     name: 部署 GitHub Pages
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -65,9 +196,9 @@ jobs:
       - uses: actions/deploy-pages@v4
         id: deploy
   release:
-    name: 发布正式版本
+    name: 发布 Web 与 Android 版本
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: verify
+    needs: [verify, android, android-smoke]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -77,15 +208,31 @@ jobs:
         with:
           name: studyos-dist
           path: dist/
-      - name: 打包生产产物
-        run: cd dist && zip -r "../StudyOS-${GITHUB_REF_NAME}.zip" .
-      - name: 发布 Release 与构建附件
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: apk/
+      - name: 核对版本并打包 Web 产物
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$version"
+          test -f "docs/RELEASE-${GITHUB_REF_NAME}.md"
+          cd dist
+          zip -r "../StudyOS-${GITHUB_REF_NAME}.zip" .
+      - name: 发布新 Release 与下载附件
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNING_MODE: ${{ needs.android.outputs.signing }}
         run: |
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --title "学序 $GITHUB_REF_NAME" --notes-file docs/RELEASE-v1.0.0.md
-            gh release upload "$GITHUB_REF_NAME" "StudyOS-${GITHUB_REF_NAME}.zip" --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" "StudyOS-${GITHUB_REF_NAME}.zip" --title "学序 $GITHUB_REF_NAME" --notes-file docs/RELEASE-v1.0.0.md --verify-tag
+            echo '此版本的 Release 已存在，拒绝覆盖。请使用新版本标签。' >&2
+            exit 1
           fi
+          notes="$RUNNER_TEMP/studyos-release-notes.md"
+          cp "docs/RELEASE-${GITHUB_REF_NAME}.md" "$notes"
+          if [ "$SIGNING_MODE" = debug ]; then
+            printf '\n## 本次 APK 签名\n\n本次附件为 **Debug 签名 APK**。当前没有完整的正式签名配置，不能视为正式签名版。不同构建的 Debug 密钥可能不同；升级前请导出 JSON 备份，签名不一致时需先卸载旧版。卸载会删除该应用的本地数据。\n' >> "$notes"
+          else
+            printf '\n## 本次 APK 签名\n\n本次 Android 附件使用仓库配置的正式 Release 密钥签名。\n' >> "$notes"
+          fi
+          gh release create "$GITHUB_REF_NAME" "StudyOS-${GITHUB_REF_NAME}.zip" apk/*.apk --title "学序 $GITHUB_REF_NAME · Android APK" --notes-file "$notes" --verify-tag

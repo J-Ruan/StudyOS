@@ -1,9 +1,22 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
-export default defineConfig({
-  base: '/StudyOS/',
-  plugins: [react()],
+export default defineConfig(({ mode }) => ({
+  base: mode === 'android' ? './' : '/StudyOS/',
+  plugins: [
+    react(),
+    ...(mode === 'android'
+      ? [
+          {
+            name: 'android-local-shell',
+            transformIndexHtml(html: string) {
+              return html.replace(/\s*<link rel="manifest"[^>]*>/g, '');
+            },
+          },
+        ]
+      : []),
+  ],
   build: {
+    outDir: mode === 'android' ? 'dist-android' : 'dist',
     rollupOptions: {
       output: {
         manualChunks: {
@@ -20,4 +33,4 @@ export default defineConfig({
     include: ['tests/**/*.test.{ts,tsx}'],
     restoreMocks: true,
   },
-});
+}));

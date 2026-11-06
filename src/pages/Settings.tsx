@@ -21,6 +21,8 @@ import { defaultPeriods, settingsSchema, type Settings as SettingsType } from '.
 import { localDate, monday, addDays } from '../lib/time';
 import { exportBackup, importBackup, parseBackup, download } from '../lib/backup';
 import { addDemo } from '../lib/demo';
+import { isNativeApp } from '../lib/native';
+import { version } from '../../package.json';
 import { Button, IconButton, Field, SaveForm, Modal } from '../components/ui';
 import Habits from './Habits';
 export default function Settings({ path }: { path: string }) {
@@ -126,7 +128,9 @@ export default function Settings({ path }: { path: string }) {
             <section className="panel">
               <h2>数据与备份</h2>
               <p className="settings-note">
-                数据保存在此浏览器。备份包含上传的课程资料；清理浏览器数据前请导出。
+                {isNativeApp()
+                  ? '数据保存在此应用。卸载或清除应用数据前请导出备份；Web 数据可通过 JSON 导入。'
+                  : '数据保存在此浏览器。备份包含上传的课程资料；清理浏览器数据前请导出。'}
               </p>
               <div className="backup-actions">
                 <Button
@@ -135,11 +139,11 @@ export default function Settings({ path }: { path: string }) {
                   onClick={async () => {
                     setBusy(true);
                     try {
-                      download(
+                      await download(
                         new Blob([await exportBackup()], { type: 'application/json' }),
                         `StudyOS-${localDate()}.json`,
                       );
-                      ui.notify('备份已导出');
+                      ui.notify(isNativeApp() ? '请在系统分享面板中选择保存位置' : '备份已导出');
                     } catch (e) {
                       ui.notify(String(e));
                     } finally {
@@ -165,7 +169,9 @@ export default function Settings({ path }: { path: string }) {
               </div>
               <div className="storage-row">
                 <HardDrive size={18} />
-                <span>{storage || '防止浏览器自动清理数据'}</span>
+                <span>
+                  {storage || (isNativeApp() ? '检查本机应用存储' : '防止浏览器自动清理数据')}
+                </span>
                 <button
                   className="text-button"
                   onClick={async () => {
@@ -200,7 +206,7 @@ export default function Settings({ path }: { path: string }) {
                 <BookOpen size={28} />
               </div>
               <h2>学序</h2>
-              <p>StudyOS · 1.0.0</p>
+              <p>StudyOS · {version}</p>
               <span className="privacy-tag">
                 <Database size={15} />
                 本地存储 · 无需登录
@@ -215,7 +221,9 @@ export default function Settings({ path }: { path: string }) {
                 项目源码
               </a>
               <p className="settings-note">
-                可通过浏览器菜单安装到桌面。离线功能在首次联网加载后可用。
+                {isNativeApp()
+                  ? 'Android 版内置完整资源，首次启动即可离线使用。与 Web 的数据通过 JSON 备份迁移。'
+                  : '可通过浏览器菜单安装到桌面。离线功能在首次联网加载后可用。'}
               </p>
               <Button
                 variant="ghost"

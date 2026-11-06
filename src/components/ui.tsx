@@ -3,6 +3,7 @@ import {
   useRef,
   useState,
   useId,
+  useContext,
   cloneElement,
   isValidElement,
   type ReactElement,
@@ -12,6 +13,8 @@ import {
 import { createPortal } from 'react-dom';
 import { ZodError } from 'zod';
 import { X, Plus, ArrowUpRight, LoaderCircle } from 'lucide-react';
+import { UIContext } from '../lib/context';
+import { isNativeApp, NATIVE_BACK_EVENT } from '../lib/native';
 export function Button({
   children,
   variant = 'primary',
@@ -117,8 +120,32 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const ui = useContext(UIContext);
+  const dirty = useRef(false);
+  const closing = useRef(false);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const requestClose = async () => {
+    if (closing.current) return;
+    if (isNativeApp() && ref.current?.querySelector('form[aria-busy="true"]')) {
+      ui?.notify('正在保存，请稍候');
+      return;
+    }
+    if (isNativeApp() && dirty.current) {
+      closing.current = true;
+      try {
+        const discard = ui
+          ? await ui.confirm('放弃未保存的修改？', '返回后，这次尚未保存的内容将丢失。')
+          : window.confirm('放弃未保存的修改？');
+        if (!discard) return;
+      } finally {
+        closing.current = false;
+      }
+    }
+    closeRef.current();
+  };
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
     if (modalCount++ === 0) {
@@ -135,7 +162,10 @@ export function Modal({
     function key(e: KeyboardEvent) {
       const dialogs = document.querySelectorAll('[role=dialog]');
       if (dialogs[dialogs.length - 1] !== node) return;
-      if (e.key === 'Escape') closeRef.current();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        void requestCloseRef.current();
+      }
       if (e.key === 'Tab') {
         const items = [...node.querySelectorAll<HTMLElement>(selectors)].filter(
           (n) => n.getClientRects().length,
@@ -151,10 +181,18 @@ export function Modal({
         }
       }
     }
+    function back(event: Event) {
+      const dialogs = document.querySelectorAll('[role=dialog]');
+      if (dialogs[dialogs.length - 1] !== node) return;
+      event.preventDefault();
+      void requestCloseRef.current();
+    }
     document.addEventListener('keydown', key);
+    window.addEventListener(NATIVE_BACK_EVENT, back);
     return () => {
       if (--modalCount === 0) document.body.style.overflow = savedOverflow;
       document.removeEventListener('keydown', key);
+      window.removeEventListener(NATIVE_BACK_EVENT, back);
       if (previous?.isConnected) previous.focus();
     };
   }, []);
@@ -162,7 +200,7 @@ export function Modal({
     <div
       className="modal-backdrop"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) void requestClose();
       }}
     >
       <div
@@ -171,10 +209,17 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        onChangeCapture={() => {
+          dirty.current = true;
+        }}
+        onClickCapture={(event) => {
+          const button = event.target instanceof Element ? event.target.closest('button') : null;
+          if (button?.type === 'button' && button.closest('fieldset')) dirty.current = true;
+        }}
       >
         <div className="modal-header">
           <h2>{title}</h2>
-          <IconButton label="关闭" onClick={onClose}>
+          <IconButton label="关闭" onClick={() => void requestClose()}>
             <X size={20} />
           </IconButton>
         </div>
@@ -194,6 +239,7 @@ export function SaveForm({
   footer?: ReactNode;
 }) {
   const [busy, setBusy] = useState(false),
+    [dirty, setDirty] = useState(false),
     [error, setError] = useState('');
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -201,6 +247,7 @@ export function SaveForm({
     setBusy(true);
     try {
       await onSave();
+      setDirty(false);
     } catch (e) {
       setError(
         e instanceof ZodError
@@ -214,7 +261,16 @@ export function SaveForm({
     }
   }
   return (
-    <form onSubmit={submit}>
+    <form
+      onSubmit={submit}
+      aria-busy={busy}
+      data-unsaved={dirty || undefined}
+      onChangeCapture={() => setDirty(true)}
+      onClickCapture={(event) => {
+        const button = event.target instanceof Element ? event.target.closest('button') : null;
+        if (button?.type === 'button' && button.closest('fieldset')) setDirty(true);
+      }}
+    >
       <fieldset disabled={busy}>{children}</fieldset>
       {error && (
         <p role="alert" className="error-message">

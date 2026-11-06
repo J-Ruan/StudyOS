@@ -2,6 +2,10 @@
 
 大学生个人学习控制台。课程、任务、专注和学习记录放在一起，不需要账号或服务器。
 
+**[下载 Android APK](https://github.com/J-Ruan/StudyOS/releases/tag/v1.1.0)** · [Android 安装与数据迁移](docs/ANDROID.md) · [Web 版本](https://j-ruan.github.io/StudyOS/)
+
+Android APK 将全部前端资源打包在应用内，安装后首次启动即可离线使用。下载时请查看附件签名标注；`android-debug.apk` 是 Debug 签名，不能当作正式签名版本。
+
 ![首页，虚拟示例数据](docs/screenshots/dashboard.png)
 
 ## 功能
@@ -74,6 +78,20 @@ React + 严格 TypeScript + Vite；Dexie 管理 IndexedDB，`useLiveQuery` 将�
 
 浏览器清理站点、隐私模式或磁盘配额限制都可能影响本地数据。可申请持久存储，但浏览器可能拒绝；请定期另存备份。没有自动跨设备同步。
 
+## Android APK
+
+Android 版本使用 Capacitor 8 和原生 Android 工程，复用现有页面、业务逻辑、`studyos` v2 数据库实体和 JSON 备份格式。无需访问线上网页即可启动，不配置远程 `server.url`，Android 构建不注册 Web Service Worker。
+
+```bash
+npm run build:android:web
+npm run cap:sync:android
+npm run android:debug
+```
+
+需要 JDK 21 与 Android SDK。签名发布、原生文件分享、系统返回键、离线与计时恢复的说明见 [Android 文档](docs/ANDROID.md)，验证边界见 [Android 验证记录](docs/ANDROID-VALIDATION.md)。
+
+**浏览器与 APK 的本地数据库相互独立，不会自动同步。** 将浏览器中的 JSON 备份保存到手机，再在 APK 的「我的 → 数据与备份」中导入即可迁移；备份包含上传的课程资料。卸载 APK 会清除其本地数据，请先导出备份。
+
 ## PWA 与离线
 
 使用 HTTPS 部署（本机开发可用 localhost）。第一次联网打开后，静态资源会完整缓存，之后可离线启动、编辑数据和计时。
@@ -86,7 +104,7 @@ Android Chromium 通过浏览器菜单「安装应用 / 添加到主屏幕」，
 
 ## GitHub Actions 与发布
 
-推送和 PR 会执行类型检查、ESLint、单元/集成测试、生产构建与 Chromium 端到端测试。CI 固定 Ubuntu 24.04，并使用运行器预装的 Google Chrome，避免安装不兼容的系统浏览器依赖。`main` 校验成功后部署 GitHub Pages；`v*` 标签校验成功后创建中文 Release 并附上生产构建 ZIP。
+推送和 PR 会执行类型检查、ESLint、单元/集成测试、生产构建与 Chromium 端到端测试。CI 固定 Ubuntu 24.04，并使用运行器预装的 Google Chrome，避免安装不兼容的系统浏览器依赖。`main` 校验成功后部署 GitHub Pages；`v*` 标签在 Web 校验和 Android APK 构建检查均成功后创建新 Release，并附上 Web ZIP 与 Android APK。已有正式 Release 会拒绝覆盖，新增平台不会复用 `v1.0.0` 标签。
 
 仓库需允许 GitHub Actions。Pages 使用 GitHub Actions 作为发布来源，工作流会尝试自动启用；若仓库策略拒绝启用，需要仓库管理员在 **Settings → Pages → Source → GitHub Actions** 开启后重跑部署任务。Release 工作流需要仓库授予 `contents: write` 权限。
 

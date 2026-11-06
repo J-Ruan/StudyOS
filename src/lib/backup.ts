@@ -12,6 +12,7 @@ import {
   reviewSchema,
 } from './models';
 import { safeURL } from './actions';
+import { isNativeApp, shareNativeFile } from './native';
 const encodedMaterial = z
   .object({
     id: z.string().min(1).max(200),
@@ -173,7 +174,11 @@ export async function importBackup(raw: string, mode: 'merge' | 'replace', datab
   });
   return backup;
 }
-export function download(blob: Blob, name: string) {
+export async function download(blob: Blob, name: string) {
+  if (isNativeApp()) {
+    await shareNativeFile(blob, name);
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

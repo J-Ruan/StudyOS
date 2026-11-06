@@ -1,7 +1,7 @@
 {
   "name": "studyos",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || >=26.0.0"
@@ -17,9 +17,25 @@
     "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm test && npm run build && npm run test:e2e",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "build:android:web": "tsc -b && vite build --mode android && node scripts/verify-android-web.mjs",
+    "cap:sync:android": "cap sync android",
+    "android:debug": "npm run build:android:web && npm run cap:sync:android && cd android && ./gradlew assembleDebug",
+    "android:release": "npm run build:android:web && npm run cap:sync:android && cd android && ./gradlew assembleRelease",
+    "test:android:device": "node scripts/test-android-device.mjs",
+    "test:android:web": "playwright test -c playwright.android.config.ts"
   },
   "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/app-launcher": "8.0.1",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/keyboard": "8.0.6",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.4",
     "dexie": "4.4.7",
     "dexie-react-hooks": "4.4.0",
     "lucide-react": "0.468.0",
@@ -28,6 +44,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.0",
     "@eslint/js": "9.39.5",
     "@playwright/test": "1.65.0",
     "@testing-library/jest-dom": "6.9.1",

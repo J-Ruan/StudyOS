@@ -6,3 +6,11 @@ test-results/
 .env*
 !.env.example
 *.tsbuildinfo
+
+dist-android/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+android-device-results/

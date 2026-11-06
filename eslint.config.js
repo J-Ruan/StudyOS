@@ -4,9 +4,22 @@ import hooks from 'eslint-plugin-react-hooks';
 import refresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 export default ts.config(
-  { ignores: ['dist', 'node_modules', 'test-results', 'playwright-report'] },
+  {
+    ignores: [
+      'dist',
+      'dist-android',
+      'android',
+      'node_modules',
+      'test-results',
+      'playwright-report',
+    ],
+  },
   js.configs.recommended,
   { files: ['scripts/**/*.mjs'], languageOptions: { globals: globals.node } },
+  {
+    files: ['scripts/test-android-device.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
   ...ts.configs.recommended,
   {
     files: ['**/*.{ts,tsx}'],

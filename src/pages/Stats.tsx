@@ -6,6 +6,7 @@ import { localDate, monday, addDays, duration, daysBetween } from '../lib/time';
 import { dailySeconds, rangeSeconds } from '../lib/logic';
 import { Button, IconButton, Tabs, Empty, SectionTitle } from '../components/ui';
 import Habits from './Habits';
+import { isNativeApp } from '../lib/native';
 export default function Stats({ path }: { path: string }) {
   const tab = path.includes('habits') ? 'habits' : path.includes('review') ? 'review' : 'stats';
   return (
@@ -250,24 +251,39 @@ function Review() {
     }))
     .sort((a, b) => b.seconds - a.seconds)[0];
   const [note, setNote] = useState(d.reviews.find((r) => r.id === week)?.note ?? '');
+  const [savedNote, setSavedNote] = useState(note);
   const [busy, setBusy] = useState(false);
-  function shift(n: number) {
+  const dirty = note !== savedNote;
+  async function shift(n: number) {
+    if (busy) return;
+    if (
+      isNativeApp() &&
+      dirty &&
+      !(await ui.confirm('放弃未保存的修改？', '切换周次后，这次尚未保存的复盘将丢失。'))
+    )
+      return;
     const w = addDays(week, n * 7);
     setWeek(w);
-    setNote(d.reviews.find((r) => r.id === w)?.note ?? '');
+    const nextNote = d.reviews.find((r) => r.id === w)?.note ?? '';
+    setNote(nextNote);
+    setSavedNote(nextNote);
   }
   return (
     <>
       <div className="toolbar">
         <h2>一周回顾</h2>
         <div className="week-control">
-          <IconButton label="上一周复盘" onClick={() => shift(-1)}>
+          <IconButton label="上一周复盘" disabled={busy} onClick={() => void shift(-1)}>
             <ChevronLeft size={18} />
           </IconButton>
           <span>
             {week.slice(5)} – {to.slice(5)}
           </span>
-          <IconButton label="下一周复盘" disabled={week >= monday()} onClick={() => shift(1)}>
+          <IconButton
+            label="下一周复盘"
+            disabled={busy || week >= monday()}
+            onClick={() => void shift(1)}
+          >
             <ChevronRight size={18} />
           </IconButton>
         </div>
@@ -292,33 +308,38 @@ function Review() {
             <span>投入最多的课程</span>
           </div>
         </div>
-        <label className="field">
-          <span>复盘笔记</span>
-          <textarea
-            rows={5}
-            placeholder="留下这一周值得记住的事。"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
-        <div className="form-footer">
-          <Button
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await db.reviews.put({ id: week, note });
+        <form
+          data-unsaved={dirty || undefined}
+          aria-busy={busy}
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBusy(true);
+            void db.reviews
+              .put({ id: week, note })
+              .then(() => {
+                setSavedNote(note);
                 ui.notify('复盘已保存');
-              } catch (e) {
-                ui.notify(String(e));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            保存复盘
-          </Button>
-        </div>
+              })
+              .catch((error: unknown) => ui.notify(String(error)))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <label className="field">
+            <span>复盘笔记</span>
+            <textarea
+              rows={5}
+              placeholder="留下这一周值得记住的事。"
+              value={note}
+              disabled={busy}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </label>
+          <div className="form-footer">
+            <Button type="submit" disabled={busy}>
+              保存复盘
+            </Button>
+          </div>
+        </form>
       </section>
     </>
   );

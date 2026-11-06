@@ -3,3 +3,8 @@ dist
 playwright-report
 test-results
 package-lock.json
+
+dist-android
+android
+
+android-device-results

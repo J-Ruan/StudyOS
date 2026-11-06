@@ -22,6 +22,13 @@ import Schedule from './pages/Schedule';
 import Focus, { TimerRuntime } from './pages/Focus';
 import Stats from './pages/Stats';
 import Settings from './pages/Settings';
+import {
+  finishNativeLaunch,
+  NATIVE_RESUME_EVENT,
+  startNativeRuntime,
+  syncNativeTheme,
+} from './lib/native';
+import { version } from '../package.json';
 const nav = [
   { path: '/', label: '首页', Icon: LayoutDashboard },
   { path: '/schedule', label: '日程', Icon: CalendarDays },
@@ -51,17 +58,45 @@ export default function App() {
   useEffect(() => {
     const route = () => setPath(location.hash.slice(1) || '/');
     const on = () => setOnline(navigator.onLine);
+    const resume = () => {
+      setNow(Date.now());
+      setOnline(navigator.onLine);
+    };
     window.addEventListener('hashchange', route);
     window.addEventListener('online', on);
     window.addEventListener('offline', on);
+    window.addEventListener(NATIVE_RESUME_EVENT, resume);
     const interval = setInterval(() => setNow(Date.now()), 30000);
     return () => {
       window.removeEventListener('hashchange', route);
       window.removeEventListener('online', on);
       window.removeEventListener('offline', on);
+      window.removeEventListener(NATIVE_RESUME_EVENT, resume);
       clearInterval(interval);
     };
   }, []);
+  useEffect(
+    () =>
+      startNativeRuntime({
+        notify: setMessage,
+        confirmDiscard: () =>
+          new Promise<boolean>((resolve) =>
+            setConfirmation({
+              title: '放弃未保存的修改？',
+              detail: '返回后，这次尚未保存的内容将丢失。',
+              resolve,
+            }),
+          ),
+      }),
+    [],
+  );
+  const loaded = !!data;
+  useEffect(() => {
+    if (loaded)
+      void finishNativeLaunch().catch((error: unknown) => {
+        setMessage(error instanceof Error ? error.message : '启动页关闭失败，请重新打开应用');
+      });
+  }, [loaded]);
   useEffect(() => {
     const error = (event: PromiseRejectionEvent) => {
       event.preventDefault();
@@ -86,8 +121,11 @@ export default function App() {
   useEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
-      document.documentElement.dataset.theme =
-        theme === 'dark' || (theme === 'system' && media.matches) ? 'dark' : 'light';
+      const dark = theme === 'dark' || (theme === 'system' && media.matches);
+      document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      void syncNativeTheme(dark).catch((error: unknown) => {
+        setMessage(error instanceof Error ? error.message : '状态栏更新失败，请重试');
+      });
     };
     apply();
     media.addEventListener('change', apply);
@@ -173,7 +211,7 @@ export default function App() {
               <button className="sidebar-settings" onClick={() => go('/me')}>
                 <SettingsIcon size={17} />
                 <span>设置</span>
-                <span className="version">v1.0</span>
+                <span className="version">v{version}</span>
               </button>
             </div>
           </aside>

@@ -52,6 +52,61 @@ body {
   margin: 0;
   min-width: 320px;
 }
+:root[data-native='true'] body {
+  background: var(--bg);
+  overscroll-behavior-y: none;
+}
+:root[data-native='true'] {
+  --native-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --native-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --native-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --native-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+:root[data-native='true'] .app-shell {
+  padding-top: var(--native-safe-top);
+  padding-left: var(--native-safe-left);
+  padding-right: var(--native-safe-right);
+}
+:root[data-native='true'] .sidebar {
+  top: var(--native-safe-top);
+  left: var(--native-safe-left);
+  bottom: var(--native-safe-bottom);
+}
+:root[data-native='true'] .modal-backdrop {
+  padding-top: max(14px, var(--native-safe-top));
+  padding-bottom: max(14px, var(--native-safe-bottom));
+  padding-left: max(12px, var(--native-safe-left));
+  padding-right: max(12px, var(--native-safe-right));
+}
+:root[data-native='true'] .modal {
+  max-height: calc(
+    100dvh - max(14px, var(--native-safe-top)) - max(14px, var(--native-safe-bottom))
+  );
+  overflow-wrap: anywhere;
+  scroll-padding: 22px;
+}
+:root[data-native='true'] .bottom-nav {
+  padding-bottom: calc(8px + var(--native-safe-bottom));
+  padding-left: max(10px, var(--native-safe-left));
+  padding-right: max(10px, var(--native-safe-right));
+}
+:root[data-native='true'][data-keyboard='true'] .bottom-nav {
+  display: none;
+}
+:root[data-native='true'][data-keyboard='true'] .modal-backdrop {
+  align-items: flex-start;
+}
+@media (max-width: 600px) {
+  :root[data-native='true'] .app-footer {
+    padding-bottom: calc(103px + var(--native-safe-bottom));
+  }
+  :root[data-native='true'] .toast {
+    bottom: calc(91px + var(--native-safe-bottom));
+  }
+  :root[data-native='true'][data-keyboard='true'] .toast {
+    bottom: 16px;
+  }
+}
 button,
 input,
 select,

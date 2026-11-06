@@ -1,10 +1,17 @@
+import { Capacitor } from '@capacitor/core';
 import { useCallback, useEffect, useState } from 'react';
 export function usePWA() {
   const [registration, setRegistration] = useState<ServiceWorkerRegistration>(),
     [needRefresh, setRefresh] = useState(false),
     [offlineReady, setOfflineReady] = useState(false);
   useEffect(() => {
-    if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
+    if (
+      import.meta.env.MODE === 'android' ||
+      Capacitor.isNativePlatform() ||
+      !import.meta.env.PROD ||
+      !('serviceWorker' in navigator)
+    )
+      return;
     let disposed = false,
       reg: ServiceWorkerRegistration | undefined,
       interval: ReturnType<typeof setInterval> | undefined;

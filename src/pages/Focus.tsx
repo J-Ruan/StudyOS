@@ -7,6 +7,7 @@ import { type Timer } from '../lib/models';
 import { dailySeconds } from '../lib/logic';
 import { duration, fullDate, timerText, localDate } from '../lib/time';
 import { Button, IconButton, Tabs, Modal, Field, Empty } from '../components/ui';
+import { NATIVE_RESUME_EVENT } from '../lib/native';
 let audio: AudioContext | undefined;
 function enableSound() {
   try {
@@ -41,8 +42,13 @@ export default function Focus({ path }: { path: string }) {
     [note, setNote] = useState('');
   const t = d.timer;
   useEffect(() => {
+    const update = () => setNow(Date.now());
     const i = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(i);
+    window.addEventListener(NATIVE_RESUME_EVENT, update);
+    return () => {
+      clearInterval(i);
+      window.removeEventListener(NATIVE_RESUME_EVENT, update);
+    };
   }, []);
   const goal =
     mode === 'pomodoro'
@@ -403,12 +409,15 @@ export function TimerRuntime() {
     const onVisibility = () => {
       if (!document.hidden) void check();
     };
+    const onResume = () => void check();
     void check();
     const interval = setInterval(() => void check(), 500);
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener(NATIVE_RESUME_EVENT, onResume);
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener(NATIVE_RESUME_EVENT, onResume);
     };
   }, [d.timer, d.settings.sound, ui]);
   return null;
