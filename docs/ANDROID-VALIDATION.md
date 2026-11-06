@@ -28,4 +28,4 @@ Android 工程已在本机实际编译并通过 APK 验证脚本：Debug APK 4,5
 
 本机本轮 Debug 构建 SHA-256：`dc2f04cb20826f3564592dacf8a72c368f76b852c61775df002313a4cbc98cce`。Debug 签名证书 SHA-256：`c51370933cda9e75e300dc312b75bd1ce1a0778488bdfd9d77abada8214e9bf8`。这些是本机构建记录，不能据此假定 CI 构建会使用相同 Debug 密钥。缺少正式签名配置时，Release 构建保护按预期拒绝执行，不会产生冒充正式签名的 APK。
 
-本机没有 `/dev/kvm`，未进行本机 Android 模拟器或真机验证。CI 配置了 API 35 模拟器测试，脚本包含真实 Android 分享面板、应用缓存 JSON 文件检查、系统 Documents 文件选择器导入及重复合并去重；目前尚未获得执行成功结果，不能据此宣称通过。本机 TypeScript、ESLint、63 项单元/集成测试、17 条原 Web/PWA 端到端测试及 6 条 Android 资源/手机宽度/跨来源 JSON 迁移测试均已执行通过。
+本机没有 `/dev/kvm`，未进行本机 Android 模拟器或真机验证。CI 已在 API 35 模拟器安装并运行真实 APK，首次断网启动、课程与任务、系统返回、后台计时、真实分享面板与缓存 JSON、系统 Documents 文件选择器导入及重复合并、深色、进程关闭后离线重启和横竖屏检查全部通过。执行证据：[PR 校验运行 42255594548](https://github.com/J-Ruan/StudyOS/actions/runs/42255594548)。这属于模拟器测试，未进行真实手机测试。本机 TypeScript、ESLint、63 项单元/集成测试、17 条原 Web/PWA 端到端测试及 6 条 Android 资源/手机宽度/跨来源 JSON 迁移测试均已执行通过。
