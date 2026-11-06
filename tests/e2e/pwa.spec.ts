@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 test('PWA 更新等待确认，应用壳与缓存成套切换，用户数据保留', async ({ page, context }) => {
+  // Worker activation can wait for browser scheduling under CI load.
+  test.setTimeout(90000);
   let version = 'v1';
   const root = join(process.cwd(), 'dist');
   const server = createServer(async (req, res) => {

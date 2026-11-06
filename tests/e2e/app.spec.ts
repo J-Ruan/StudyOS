@@ -124,12 +124,14 @@ test('计时跨页面、暂停、刷新恢复与任务累计，结束不自动�
   await page.getByRole('button', { name: '开始专注', exact: true }).click();
   await page.clock.fastForward(65000);
   await page.getByRole('button', { name: '暂停', exact: true }).click();
+  await expect(page.getByRole('button', { name: '继续', exact: true })).toBeVisible();
   await expect(page.getByLabel('计时')).toHaveText('01:05');
   await page.clock.fastForward(30000);
   await expect(page.getByLabel('计时')).toHaveText('01:05');
   await page.reload();
   await expect(page.getByRole('button', { name: '继续', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '继续', exact: true }).click();
+  await expect(page.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   await page.clock.fastForward(45000);
   await page.locator('.sidebar nav').getByRole('link', { name: '首页', exact: true }).click();
   await expect(page.getByRole('button', { name: '专注中' })).toBeVisible();
