@@ -78,7 +78,12 @@ export function generatePlans(
     skipped: { title: string; reason: string }[] = [];
   const assigned = new Set((d.plans ?? []).filter((p) => !p.done).map((p) => p.taskId));
   const tasks = d.tasks
-    .filter((t) => !t.done && !assigned.has(t.id) && t.scheduledStart === undefined)
+    .filter(
+      (t) =>
+        !t.done &&
+        !assigned.has(t.id) &&
+        (t.scheduledStart === undefined || (d.plans ?? []).some((p) => p.taskId === t.id)),
+    )
     .sort((a, b) => {
       const weight = { high: 4, medium: 2, low: 0 };
       return (

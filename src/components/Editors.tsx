@@ -464,6 +464,8 @@ function TaskEditor({ editor }: { editor: Editor }) {
   );
   const patch = (p: Partial<Task>) => set({ ...t, ...p });
   const [sub, setSub] = useState('');
+  const [cancelPlans, setCancelPlans] = useState<string[]>([]);
+  const relatedPlans = (data.plans ?? []).filter((p) => p.taskId === t.id);
   async function remove() {
     if (await ui.confirm('删除这个任务？', '已记录的专注时间会保留。')) {
       await deleteTask(t.id);
@@ -475,7 +477,11 @@ function TaskEditor({ editor }: { editor: Editor }) {
     <Modal title={exists ? '任务详情' : '新建任务'} onClose={ui.close}>
       <SaveForm
         onSave={async () => {
-          await db.tasks.put(taskSchema.parse(t));
+          const valid = taskSchema.parse(t);
+          await db.transaction('rw', [db.tasks, db.plans], async () => {
+            await db.tasks.put(valid);
+            await db.plans.bulkDelete(cancelPlans);
+          });
           ui.close();
           ui.notify('任务已保存');
         }}
@@ -609,7 +615,25 @@ function TaskEditor({ editor }: { editor: Editor }) {
               <Plus size={18} />
             </IconButton>
           </div>
-          {t.scheduledStart && (
+          {relatedPlans
+            .filter((p) => !p.done && !cancelPlans.includes(p.id))
+            .map((p) => (
+              <p className="muted" key={p.id}>
+                自习安排：{dateTimeInput(p.start).replace('T', ' ')}
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => {
+                    setCancelPlans([...cancelPlans, p.id]);
+                    if (p.id === `legacy:${t.id}`)
+                      patch({ scheduledStart: undefined, scheduledEnd: undefined });
+                  }}
+                >
+                  取消安排
+                </button>
+              </p>
+            ))}
+          {t.scheduledStart && !relatedPlans.length && (
             <p className="muted">
               自习安排：{dateTimeInput(t.scheduledStart).replace('T', ' ')}
               <button

@@ -91,3 +91,37 @@ it('long-press menu focus links the task', async () => {
   fireEvent.click(screen.getByRole('button', { name: '开始专注' }));
   expect(ui.focus).toHaveBeenCalledWith(undefined, 't');
 });
+
+it('task detail cancellation updates migrated study plans only after saving', async () => {
+  const at = Date.now() + 3600000;
+  const t = taskSchema.parse({
+    id: 'linked',
+    title: '已排任务',
+    kind: 'todo',
+    notes: '',
+    due: at + 86400000,
+    priority: 'medium',
+    estimate: 25,
+    done: false,
+    subtasks: [],
+    repeat: 'none',
+    scheduledStart: at,
+    scheduledEnd: at + 1500000,
+  });
+  const plan = {
+    id: 'legacy:linked',
+    taskId: 'linked',
+    title: t.title,
+    start: at,
+    end: at + 1500000,
+    done: false,
+  };
+  await db.tasks.add(t);
+  await db.plans.add(plan);
+  mount(<Editors editor={{ kind: 'task', id: t.id }} />, { ...data, tasks: [t], plans: [plan] });
+  fireEvent.click(screen.getByRole('button', { name: '取消安排' }));
+  expect(await db.plans.count()).toBe(1);
+  fireEvent.click(screen.getByRole('button', { name: '保存' }));
+  await waitFor(async () => expect(await db.plans.count()).toBe(0));
+  expect((await db.tasks.get(t.id))?.scheduledStart).toBeUndefined();
+});

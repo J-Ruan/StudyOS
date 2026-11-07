@@ -2,13 +2,13 @@
 
 大学生个人学习控制台。课程、任务、专注和学习记录放在一起，不需要账号或服务器。
 
-**[下载 Android APK](https://github.com/J-Ruan/StudyOS/releases/tag/v1.1.0)** · [Android 安装与数据迁移](docs/ANDROID.md) · [Web 版本](https://j-ruan.github.io/StudyOS/)
+**[下载 Android APK](https://github.com/J-Ruan/StudyOS/releases/latest)** · [Android 安装与数据迁移](docs/ANDROID.md) · [Web 版本](https://j-ruan.github.io/StudyOS/)
 
 **v1.2.0 升级**：新增手机课表、独立任务、Android 原生提醒、番茄循环、离线学习计划和 CSV/XLSX 导入，并更新应用图标。正式发布需固定签名密钥；当前下载入口以实际已发布版本为准。
 
 Android APK 将全部前端资源打包在应用内，安装后首次启动即可离线使用。下载时请查看附件签名标注；`android-debug.apk` 是 Debug 签名，不能当作正式签名版本。
 
-![首页，虚拟示例数据](docs/screenshots/dashboard.png)
+![v1.2.0 手机首页，虚拟示例数据](docs/screenshots/v1.2.0/today.png)
 
 ## 功能
 
