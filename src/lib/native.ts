@@ -130,7 +130,14 @@ export function startNativeRuntime({
     Keyboard.addListener('keyboardDidShow', () => {
       if (disposed) return;
       document.documentElement.dataset.keyboard = 'true';
-      document.activeElement?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      document.activeElement?.scrollIntoView?.({
+        block: 'center',
+        behavior:
+          typeof matchMedia === 'function' &&
+          !matchMedia('(prefers-reduced-motion: reduce)').matches
+            ? 'smooth'
+            : 'instant',
+      });
     }),
   );
   listen(

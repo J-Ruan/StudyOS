@@ -47,4 +47,5 @@
     <!-- Import uses the system picker; export uses app-private cache. -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

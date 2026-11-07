@@ -158,7 +158,9 @@ export function syncNotifications(data: ReminderData) {
     );
     if (fresh.length) await LocalNotifications.schedule({ notifications: fresh });
     // Remove stale delivered reminders for changed/completed/deleted entities.
-    const delivered = await LocalNotifications.getDeliveredNotifications();
+    // Android's legacy delivered API returns system `data`, not our `extra`.
+    // The pinned 8.3 API joins active IDs to stored notification metadata.
+    const delivered = await LocalNotifications.getAll({ state: 'TRIGGERED' });
     const stale = delivered.notifications.filter(
       (n) =>
         n.extra?.owner === OWNER &&
@@ -171,7 +173,7 @@ export function syncNotifications(data: ReminderData) {
             (!data.timer || !preferences(data.settings).focusNotifications))),
     );
     if (stale.length)
-      await LocalNotifications.removeDeliveredNotifications({ notifications: stale });
+      await LocalNotifications.removeDeliveredNotificationsById({ ids: stale.map((n) => n.id) });
     const t = data.timer;
     if (t && preferences(data.settings).focusNotifications) {
       const statusKey = `${t.token}:${t.running}:${t.anchor}:${t.elapsed}`;
@@ -221,8 +223,8 @@ export function syncNotifications(data: ReminderData) {
       }
     } else {
       await LocalNotifications.cancel({ notifications: [{ id: STATUS }] });
-      await LocalNotifications.removeDeliveredNotifications({
-        notifications: delivered.notifications.filter((n) => n.id === STATUS),
+      await LocalNotifications.removeDeliveredNotificationsById({
+        ids: delivered.notifications.filter((n) => n.id === STATUS).map((n) => n.id),
       });
       previousStatus = '';
     }

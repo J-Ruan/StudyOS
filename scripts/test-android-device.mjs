@@ -580,7 +580,7 @@ async function verifyFocusNotificationActions() {
     const n = await page.evaluate(() =>
       window.Capacitor.Plugins.LocalNotifications.getDeliveredNotifications(),
     );
-    return n.notifications.some((n) => n.extra?.kind === 'status');
+    return n.notifications.some((n) => n.id === 1200000001 && n.title === '专注进行中');
   }, 'Native ongoing focus status notification');
   await device.shell('input keyevent 3');
   await device.shell('cmd statusbar expand-notifications');

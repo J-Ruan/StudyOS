@@ -102,7 +102,7 @@ export default function CourseImport() {
           CSV 模板
         </Button>
       </div>
-      {error && (
+      {error && !rows && (
         <p role="alert" className="error-message">
           {error}
         </p>
@@ -118,6 +118,11 @@ export default function CourseImport() {
           <div className="import-steps" aria-label="导入阶段">
             文件 → <strong>字段映射与预览</strong> → 确认
           </div>
+          {error && (
+            <p role="alert" className="error-message">
+              {error}
+            </p>
+          )}
           <Field label="标题所在行">
             <select
               value={header}

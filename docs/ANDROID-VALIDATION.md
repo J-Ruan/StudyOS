@@ -9,7 +9,7 @@ Node 24、JDK 21、Capacitor 8、AGP 8.13.0、Gradle 8.14.3、SDK 36 / Build Too
 ## 已实际执行的本地检查
 
 - `npm run typecheck`、`npm run lint` 通过。
-- `npm test`：91 项单元/集成测试通过。
+- `npm test`：92 项单元/集成测试通过。
 - `npm run build`、`npm run build:android:web` 通过。
 - `npm run test:e2e`：17 项 Web/PWA 回归通过。
 - `npm run test:android:web`：11 项 Android 资源、手机宽度、跨来源迁移和新增功能浏览器测试通过。

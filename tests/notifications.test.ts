@@ -26,10 +26,10 @@ vi.mock('@capacitor/local-notifications', () => ({
     checkPermissions: mock.permission,
     checkExactNotificationSetting: mock.exact,
     getPending: mock.pending,
-    getDeliveredNotifications: mock.delivered,
+    getAll: mock.delivered,
     schedule: mock.schedule,
     cancel: mock.cancel,
-    removeDeliveredNotifications: mock.remove,
+    removeDeliveredNotificationsById: mock.remove,
     registerActionTypes: mock.actions,
   },
 }));
@@ -187,4 +187,11 @@ it('finite automatic group pre-schedules each phase; no break contributes a stud
   expect(plan).toHaveLength(4);
   expect(plan.map((n) => n.title)).toEqual(['专注完成', '休息结束', '专注完成', '休息结束']);
   expect(await db.sessions.count()).toBe(0);
+});
+
+it('completed tasks remove an already posted native reminder using stored triggered metadata', async () => {
+  const posted = notificationPlan({ tasks: [task], exams: [], settings }, now);
+  mock.delivered.mockResolvedValue({ notifications: posted });
+  await syncNotifications({ tasks: [{ ...task, done: true }], exams: [], settings });
+  expect(mock.remove).toHaveBeenCalledWith({ ids: [posted[0].id] });
 });
