@@ -229,7 +229,9 @@ export function syncNotifications(data: ReminderData) {
               body:
                 t.running && t.mode !== 'stopwatch'
                   ? `${fullDate(end)} 结束 · 点击查看实时计时`
-                  : `${Math.floor(elapsedSeconds(t) / 60)} 分钟 · 点击返回专注`,
+                  : t.running
+                    ? '正向计时 · 点击查看实时计时'
+                    : `${Math.floor(elapsedSeconds(t) / 60)} 分钟 · 已暂停`,
               channelId: 'studyos-status',
               smallIcon: 'ic_stat_study',
               ongoing: true,

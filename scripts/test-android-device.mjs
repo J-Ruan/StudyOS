@@ -110,15 +110,20 @@ async function foregroundActivity() {
   );
 }
 async function captureNativeUi() {
-  const foreground = await foregroundActivity();
-  await device.shell('rm -f /sdcard/studyos-test-window.xml');
-  const result = await device.shell('uiautomator dump /sdcard/studyos-test-window.xml');
-  const xml = (await device.shell('cat /sdcard/studyos-test-window.xml')).toString();
-  if (!xml.includes('<hierarchy'))
-    throw new Error(
-      `Native UI hierarchy unavailable (${foreground}): ${result.toString().slice(0, 300)}`,
-    );
-  return { xml, nodes: summarizeNativeTree(xml), foreground };
+  let last = '';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const foreground = await foregroundActivity();
+    await device.shell('rm -f /sdcard/studyos-test-window.xml');
+    const result = await device.shell('uiautomator dump /sdcard/studyos-test-window.xml');
+    const xml = (await device.shell('cat /sdcard/studyos-test-window.xml')).toString();
+    if (xml.includes('<hierarchy') && xml.includes('<node'))
+      return { xml, nodes: summarizeNativeTree(xml), foreground };
+    last = `(${foreground}): ${result.toString().slice(0, 300)}`;
+    // A Documents activity may be resumed before its accessibility root attaches.
+    // Retry the actual native hierarchy; never inject a file or synthesize app data.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Native UI hierarchy unavailable after four fresh snapshots ${last}`);
 }
 async function tapNativeNode(node) {
   // The shell dump and the Playwright UI driver would compete for UiAutomation.
