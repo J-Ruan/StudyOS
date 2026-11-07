@@ -1,6 +1,6 @@
 import { _android } from 'playwright';
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 
 const output = 'android-device-results';
@@ -44,8 +44,19 @@ async function open(path) {
 async function save() {
   const dialogs = page.getByRole('dialog');
   const title = (await dialogs.count()) ? await dialogs.last().getAttribute('aria-label') : 'page';
-  phase = `save:${title}`;
-  await page.getByRole('button', { name: '保存', exact: true }).click();
+  phase = `save:${title}:settle-ime`;
+  await page.evaluate(async () => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    await window.Capacitor.Plugins.Keyboard.hide();
+  });
+  await page.waitForFunction(() => document.documentElement.dataset.keyboard !== 'true');
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  const submit = page.getByRole('button', { name: '保存', exact: true });
+  await submit.scrollIntoViewIfNeeded();
+  phase = `save:${title}:click`;
+  await submit.click();
   await page.getByRole('dialog').waitFor({ state: 'hidden' });
   phase = `saved:${title}`;
 }
@@ -121,10 +132,10 @@ async function tapNativeNode(node) {
     y = Math.round((bounds[1] + bounds[3]) / 2);
   await device.shell(`input tap ${x} ${y}`);
 }
-async function selectBackupFromDownloads(name) {
+async function chooseFileFromDownloads(name, label = '导入备份') {
   // Use Android's actual picker; do not inject a File into the WebView DOM.
   phase = 'backup:open-system-picker';
-  await page.getByLabel('导入备份').click();
+  await page.getByLabel(label).click();
   await pollNative(
     async () =>
       /documentsui|DocumentsActivity|PickerActivity|ChooserActivity|ResolverActivity/i.test(
@@ -205,6 +216,9 @@ async function selectBackupFromDownloads(name) {
     'Android document picker returns the selected file',
     15000,
   );
+}
+async function selectBackupFromDownloads(name) {
+  await chooseFileFromDownloads(name);
   phase = 'backup:parse-selected-json';
   await page.getByRole('dialog', { name: '恢复备份', exact: true }).waitFor();
   await page.getByRole('button', { name: '确认恢复', exact: true }).click();
@@ -213,34 +227,40 @@ async function selectBackupFromDownloads(name) {
 async function verifyNativeBackup() {
   await open('/me');
   await page.getByRole('button', { name: '导出备份', exact: true }).click();
-  await pollNative(async () => {
-    const activities = (await device.shell('dumpsys activity activities')).toString();
-    return /(?:mResumedActivity|topResumedActivity)[^\n]*(?:ChooserActivity|ResolverActivity)/.test(
-      activities,
-    );
-  }, 'Android system share activity');
-  await device.screenshot({ path: `${output}/system-share.png` });
-  await device.shell('input keyevent 4');
-  const listed = (
-    await device.shell('run-as com.jruan.studyos find cache/studyos-share -type f -name "*.json"')
-  )
-    .toString()
-    .trim()
-    .split('\n');
-  const candidates = listed
-    .filter((path) =>
-      /^cache\/studyos-share\/[0-9]+-[0-9a-f-]+\/StudyOS-\d{4}-\d{2}-\d{2}\.json$/.test(path),
-    )
-    .sort((a, b) => Number(b.split('/')[2].split('-')[0]) - Number(a.split('/')[2].split('-')[0]));
-  assert(candidates.length, 'Native Filesystem did not write a JSON backup');
-  const raw = (await device.shell(`run-as com.jruan.studyos cat ${candidates[0]}`)).toString();
+  phase = 'backup:system-save';
+  await pollNative(
+    async () => /documentsui|DocumentsActivity/i.test(await foregroundActivity()),
+    'Android CREATE_DOCUMENT save activity',
+  );
+  let written = false;
+  for (let attempt = 0; attempt < 8 && !written; attempt++) {
+    const state = await captureNativeUi();
+    const save = state.nodes.find((n) => n.enabled && /^(Save|保存)$/i.test(n.text));
+    if (save) {
+      await tapNativeNode(save);
+      written = true;
+      break;
+    }
+    const downloads = state.nodes.find((n) => n.enabled && /^(Downloads|下载)$/i.test(n.text));
+    if (downloads) await tapNativeNode(downloads);
+  }
+  assert(written, 'Android save picker did not expose Save');
+  await pollNative(
+    async () => /com\.jruan\.studyos/.test(await foregroundActivity()),
+    'Save picker returns to app',
+  );
+  const filenameWritten = `StudyOS-${await page.evaluate(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })}.json`;
+  const raw = (await device.shell(`cat /sdcard/Download/${filenameWritten}`)).toString();
   const backup = JSON.parse(raw);
   assert.equal(backup.app, 'StudyOS');
-  assert.equal(backup.version, 2);
+  assert.equal(backup.version, 3);
   for (const table of ['courses', 'tasks', 'sessions'])
     assert.equal(backup.data[table].length, (await dbRows(table)).length);
   assert.equal(backup.data.tasks[0].title, 'Android 离线任务');
-  check('Native Filesystem JSON export and actual Android system share panel');
+  check('Native ACTION_CREATE_DOCUMENT saves a complete JSON v3 backup in Downloads');
   const filename = 'StudyOS-native-roundtrip.json';
   await device.shell('mkdir -p /sdcard/Download');
   await device.push(Buffer.from(raw), `/sdcard/Download/${filename}`);
@@ -267,12 +287,347 @@ async function verifyNativeBackup() {
   );
 }
 
+async function verifyUpgrade() {
+  const legacy = process.env.ANDROID_LEGACY_APK;
+  assert(legacy, 'CI must provide a v1.1.0 APK built with the same test signature');
+  phase = 'upgrade:install-v1.1';
+  execFileSync('adb', ['-s', device.serial(), 'install', '-r', legacy], { stdio: 'inherit' });
+  await device.shell('svc wifi disable');
+  await device.shell('svc data disable');
+  await device.shell('am start -n com.jruan.studyos/.MainActivity');
+  page = await (await device.webView({ pkg: 'com.jruan.studyos' })).page();
+  await page.locator('main').waitFor();
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('studyos');
+        req.onsuccess = () => {
+          const db = req.result;
+          if (db.version !== 20) {
+            reject(Error(`Expected Dexie v2, IDB ${db.version}`));
+            return;
+          }
+          const tables = [
+            'courses',
+            'tasks',
+            'sessions',
+            'settings',
+            'habits',
+            'checks',
+            'exams',
+            'overrides',
+            'materials',
+            'reviews',
+            'timer',
+          ];
+          const tx = db.transaction(tables, 'readwrite'),
+            now = Date.now();
+          const put = (table, row) => tx.objectStore(table).put(row);
+          put('courses', {
+            id: 'legacy-course',
+            name: '升级保留课程',
+            teacher: '老师',
+            room: 'A203',
+            color: '#a47bbe',
+            slots: [{ id: 'slot', day: 1, start: 1, end: 2, from: 1, to: 16, parity: 'all' }],
+          });
+          put('tasks', {
+            id: 'legacy-task',
+            title: '升级保留任务',
+            kind: 'todo',
+            courseId: 'legacy-course',
+            notes: '旧备注',
+            due: now + 86400000,
+            priority: 'high',
+            estimate: 25,
+            done: false,
+            subtasks: [],
+            repeat: 'none',
+            scheduledStart: now + 3600000,
+            scheduledEnd: now + 5100000,
+          });
+          put('sessions', {
+            id: 'legacy-session',
+            start: now - 60000,
+            end: now,
+            seconds: 60,
+            segments: [{ start: now - 60000, end: now }],
+            courseId: 'legacy-course',
+            taskId: 'legacy-task',
+            note: '旧记录',
+          });
+          put('settings', { id: 'main', theme: 'system', sound: false });
+          put('habits', {
+            id: 'legacy-habit',
+            name: '旧习惯',
+            kind: 'check',
+            target: 1,
+            days: [1, 2, 3, 4, 5, 6, 7],
+            created: '2026-11-01',
+          });
+          put('checks', {
+            id: 'legacy-habit:2026-11-01',
+            habitId: 'legacy-habit',
+            date: '2026-11-01',
+            value: 1,
+          });
+          put('exams', {
+            id: 'legacy-exam',
+            name: '旧考试',
+            kind: 'final',
+            at: now + 86400000,
+            room: 'A101',
+            courseId: 'legacy-course',
+            notes: '',
+            taskIds: ['legacy-task'],
+            archived: false,
+          });
+          put('overrides', {
+            id: 'legacy-override',
+            date: '2026-11-09',
+            courseId: 'legacy-course',
+            slotId: 'slot',
+            kind: 'cancel',
+            start: 1,
+            end: 2,
+            room: '',
+          });
+          put('materials', {
+            id: 'legacy-material',
+            courseId: 'legacy-course',
+            name: '旧资料.txt',
+            data: new Blob(['legacy notes'], { type: 'text/plain' }),
+          });
+          put('reviews', { id: '2026-11-02', note: '旧复盘' });
+          put('timer', {
+            id: 'active',
+            token: 'legacy-timer',
+            mode: 'stopwatch',
+            goal: 60,
+            running: false,
+            started: now,
+            anchor: now,
+            elapsed: 0,
+            segments: [],
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+  );
+  await device.shell('am force-stop com.jruan.studyos');
+  execFileSync('adb', ['-s', device.serial(), 'install', '-r', apk], { stdio: 'inherit' });
+  await device.shell('am start -n com.jruan.studyos/.MainActivity');
+  page = await (await device.webView({ pkg: 'com.jruan.studyos' })).page();
+  await page.locator('main').waitFor();
+  for (const table of [
+    'courses',
+    'tasks',
+    'sessions',
+    'habits',
+    'checks',
+    'exams',
+    'overrides',
+    'materials',
+    'reviews',
+    'plans',
+    'timer',
+  ])
+    assert.equal((await dbRows(table)).length, 1, `Upgrade retained ${table}`);
+  assert.equal((await dbRows('tasks'))[0].courseId, 'legacy-course');
+  assert.equal((await dbRows('sessions'))[0].seconds, 60);
+  assert.equal((await dbRows('plans'))[0].taskId, 'legacy-task');
+  assert.equal((await dbRows('timer'))[0].token, 'legacy-timer');
+  await page.screenshot({ path: `${output}/upgrade-retained.png` });
+  // Remove only this test's fixtures after assertions, never pm clear/uninstall.
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('studyos');
+        req.onsuccess = () => {
+          const db = req.result;
+          if (db.version !== 30) {
+            reject(Error('Expected database v3'));
+            return;
+          }
+          const ids = {
+            courses: 'legacy-course',
+            tasks: 'legacy-task',
+            sessions: 'legacy-session',
+            habits: 'legacy-habit',
+            checks: 'legacy-habit:2026-11-01',
+            exams: 'legacy-exam',
+            overrides: 'legacy-override',
+            materials: 'legacy-material',
+            reviews: '2026-11-02',
+            plans: 'legacy:legacy-task',
+            timer: 'active',
+          };
+          const tx = db.transaction(Object.keys(ids), 'readwrite');
+          for (const [table, id] of Object.entries(ids)) tx.objectStore(table).delete(id);
+          tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+  );
+  await device.shell('am force-stop com.jruan.studyos');
+  check(
+    'v1.1.0 to v1.2.0 same-signature in-place upgrade preserves all 11 legacy entity types and migrates plans without clearing app data',
+  );
+}
+async function verifyNotifications() {
+  phase = 'notifications:request-permission';
+  await open('/me');
+  await page.getByText('通知与提醒', { exact: true }).click();
+  await page.getByRole('button', { name: '允许系统通知', exact: true }).click();
+  await pollNative(
+    async () => {
+      const permission = await page.evaluate(() =>
+        window.Capacitor.Plugins.LocalNotifications.checkPermissions(),
+      );
+      if (permission.display === 'granted') return true;
+      const state = await captureNativeUi();
+      const allow = state.nodes.find(
+        (n) =>
+          n.enabled &&
+          (/:id\/permission_allow_button$/.test(n.res) || /^(Allow|允许)$/i.test(n.text)),
+      );
+      if (allow) await tapNativeNode(allow);
+      return false;
+    },
+    'Actual Android 13+ notification permission grant',
+    20000,
+  );
+  // Isolated emulator grants the same special app access available in Android settings.
+  await device.shell('appops set com.jruan.studyos SCHEDULE_EXACT_ALARM allow');
+  await page.getByLabel('任务提醒', { exact: true }).check();
+  await page.getByLabel('专注提醒与状态', { exact: true }).check();
+  await save();
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const req = indexedDB.open('studyos');
+        req.onsuccess = () => {
+          const db = req.result,
+            tx = db.transaction('tasks', 'readwrite'),
+            now = Date.now();
+          tx.objectStore('tasks').put({
+            id: 'native-reminder-fixture',
+            title: 'StudyOS 原生提醒验证',
+            kind: 'todo',
+            notes: '',
+            due: now + 3600000,
+            priority: 'medium',
+            estimate: 25,
+            done: false,
+            subtasks: [],
+            repeat: 'none',
+            reminders: [{ kind: 'at', value: now + 15000 }],
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve(true);
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      }),
+  );
+  await page.reload();
+  await page.locator('main').waitFor();
+  await pollNative(async () => {
+    const result = await page.evaluate(() =>
+      window.Capacitor.Plugins.LocalNotifications.getPending(),
+    );
+    return result.notifications.some((n) => n.extra?.entity === 'native-reminder-fixture');
+  }, 'Real native alarm is pending');
+  await device.shell('input keyevent 3');
+  phase = 'notifications:system-trigger';
+  await pollNative(
+    async () =>
+      String(await device.shell('dumpsys notification --noredact')).includes(
+        'android.title=String (StudyOS 原生提醒验证)',
+      ),
+    'NotificationManager actually posts the reminder',
+    40000,
+  );
+  await device.shell('cmd statusbar expand-notifications');
+  const state = await captureNativeUi();
+  const title = state.nodes.find((n) => n.text === 'StudyOS 原生提醒验证');
+  assert(title, 'Native notification visible in shade');
+  await device.screenshot({ path: `${output}/native-notification.png` });
+  await tapNativeNode(title);
+  await page.waitForFunction(() => location.hash === '#/tasks');
+  check(
+    'Actual POST_NOTIFICATIONS permission, native alarm trigger and notification shade click route to tasks',
+  );
+  await page.locator('.task-content').filter({ hasText: 'StudyOS 原生提醒验证' }).click();
+  await page.getByRole('button', { name: '删除', exact: true }).click();
+  await page.getByRole('button', { name: '确认', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+}
+async function verifyFocusNotificationActions() {
+  phase = 'focus:notification-action';
+  await pollNative(async () => {
+    const n = await page.evaluate(() =>
+      window.Capacitor.Plugins.LocalNotifications.getDeliveredNotifications(),
+    );
+    return n.notifications.some((n) => n.extra?.kind === 'status');
+  }, 'Native ongoing focus status notification');
+  await device.shell('input keyevent 3');
+  await device.shell('cmd statusbar expand-notifications');
+  let state = await captureNativeUi();
+  let pause = state.nodes.find((n) => n.text === '暂停并打开');
+  if (!pause) {
+    const expand = state.nodes.find(
+      (n) => /^(Expand|展开)$/i.test(n.desc) || /:id\/expand_button$/.test(n.res),
+    );
+    if (expand) await tapNativeNode(expand);
+    state = await captureNativeUi();
+    pause = state.nodes.find((n) => n.text === '暂停并打开');
+  }
+  assert(pause, 'Focus notification exposes its real pause action');
+  await tapNativeNode(pause);
+  await page.getByRole('button', { name: '继续', exact: true }).waitFor();
+  assert.equal((await dbRows('timer'))[0].running, false);
+  await page.getByRole('button', { name: '继续', exact: true }).click();
+  check('Native focus notification pause action opens app and changes persisted timer state');
+}
+async function verifyCourseFile() {
+  phase = 'courses:native-xlsx-picker';
+  const filename = 'StudyOS-courses.xlsx';
+  await device.push(await readFile('tests/fixtures/courses.xlsx'), `/sdcard/Download/${filename}`);
+  await device.shell(
+    `am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/${filename}`,
+  );
+  await open('/schedule');
+  await chooseFileFromDownloads(filename, '导入课表');
+  await page.getByRole('dialog', { name: '导入课程表', exact: true }).waitFor();
+  await page.getByText('线性代数', { exact: true }).waitFor();
+  await page.getByLabel('已核对预览，确认写入这些课程').check();
+  await page.getByRole('button', { name: '确认导入', exact: true }).click();
+  await page.getByRole('dialog').waitFor({ state: 'hidden' });
+  assert.equal((await dbRows('courses')).length, 2);
+  check(
+    'Real Android Documents XLSX selection, local parsing, preview and confirmed atomic course import',
+  );
+}
+
 try {
   assert.equal(
     (await device.shell('getprop ro.kernel.qemu')).toString().trim(),
     '1',
     'This data-modifying smoke test requires an isolated Android emulator',
   );
+  await verifyUpgrade();
   execFileSync('adb', ['-s', device.serial(), 'install', '-r', apk], { stdio: 'inherit' });
   await device.shell('svc wifi disable');
   await device.shell('svc data disable');
@@ -322,12 +677,17 @@ try {
   await device.shell('input keyevent 4');
   await page.waitForFunction(() => location.hash === '#/me');
   check('Android back returns from child page');
+  await verifyNotifications();
   await open('/focus');
   await page.getByRole('button', { name: '正向计时', exact: true }).click();
   await page.getByRole('button', { name: '开始专注', exact: true }).click();
   await page.getByRole('button', { name: '暂停', exact: true }).waitFor();
+  await verifyFocusNotificationActions();
   await device.shell('input keyevent 3');
+  await device.shell('input keyevent 26');
   await new Promise((r) => setTimeout(r, 1500));
+  await device.shell('input keyevent 224');
+  await device.shell('input keyevent 82');
   await device.shell('am start -n com.jruan.studyos/.MainActivity');
   await page.getByRole('button', { name: '结束', exact: true }).click();
   await page.getByRole('button', { name: '保存并结束', exact: true }).click();
@@ -338,6 +698,7 @@ try {
   assert.equal((await dbRows('tasks'))[0].done, false);
   check('Background/resume timestamps and single focus record');
   await verifyNativeBackup();
+  await verifyCourseFile();
   await open('/stats');
   await page.locator('.stats-overview').waitFor();
   check('Statistics render from native records');
@@ -346,6 +707,7 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
   check('Dark mode');
   await page.screenshot({ path: `${output}/dark.png` });
+  const expectedCourses = (await dbRows('courses')).length;
   // Simulate process death, then cold-start offline and verify persisted entities.
   await device.shell('am force-stop com.jruan.studyos');
   await device.shell('am start -n com.jruan.studyos/.MainActivity');
@@ -353,8 +715,8 @@ try {
   await page.locator('main').waitFor();
   assert.equal((await dbRows('tasks')).length, 1);
   assert.equal((await dbRows('sessions')).length, 1);
-  assert.equal((await dbRows('courses')).length, 1);
-  check('Cold-start offline retains database v2 data');
+  assert.equal((await dbRows('courses')).length, expectedCourses);
+  check('Cold-start offline retains database v3 data');
   await device.shell('settings put system accelerometer_rotation 0');
   await device.shell('settings put system user_rotation 1');
   await new Promise((r) => setTimeout(r, 800));
@@ -366,6 +728,7 @@ try {
   await page.screenshot({ path: `${output}/landscape.png` });
   await device.shell('settings put system user_rotation 0');
   check('Landscape layout without document overflow');
+  console.log(`::notice title=Android native checks::${JSON.stringify(notes)}`);
   await writeFile(
     `${output}/summary.json`,
     JSON.stringify({ platform: 'Android emulator', checks: notes, physicalDevice: false }, null, 2),
@@ -380,6 +743,21 @@ try {
           ].slice(0, 15);
           return {
             hash: location.hash,
+            viewport: {
+              inner: [innerWidth, innerHeight],
+              scroll: [scrollX, scrollY],
+              visual: visualViewport
+                ? {
+                    width: visualViewport.width,
+                    height: visualViewport.height,
+                    offsetTop: visualViewport.offsetTop,
+                  }
+                : null,
+            },
+            saveButtons: [...document.querySelectorAll('button[type=submit]')].map((n) => {
+              const r = n.getBoundingClientRect();
+              return { x: r.x, y: r.y, width: r.width, height: r.height };
+            }),
             keyboard: document.documentElement.dataset.keyboard ?? 'hidden-or-unreported',
             active: active
               ? {

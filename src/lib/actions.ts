@@ -1,5 +1,5 @@
 import { db } from './db';
-import { id, type Task, type Timer, type Session } from './models';
+import { preferences, id, type Task, type Timer, type Session } from './models';
 import { nextDue } from './time';
 export async function toggleTask(taskId: string) {
   return db.transaction('rw', db.tasks, async () => {
@@ -19,6 +19,7 @@ export async function toggleTask(taskId: string) {
           subtasks: t.subtasks.map((s) => ({ ...s, id: id(), done: false })),
           parentId: t.id,
           repeatKey,
+          reminders: t.reminders?.filter((r) => r.kind === 'before'),
           scheduledStart: undefined,
           scheduledEnd: undefined,
         };
@@ -30,7 +31,7 @@ export async function toggleTask(taskId: string) {
 export async function deleteCourse(courseId: string) {
   await db.transaction(
     'rw',
-    [db.courses, db.tasks, db.exams, db.sessions, db.overrides, db.materials, db.timer],
+    [db.courses, db.tasks, db.exams, db.sessions, db.overrides, db.materials, db.timer, db.plans],
     async () => {
       await db.courses.delete(courseId);
       await db.tasks
@@ -51,14 +52,26 @@ export async function deleteCourse(courseId: string) {
       await db.timer.toCollection().modify((row) => {
         if (row.courseId === courseId) delete row.courseId;
       });
+      await db.plans
+        .where('courseId')
+        .equals(courseId)
+        .modify((p) => {
+          delete p.courseId;
+        });
       await db.overrides.where('courseId').equals(courseId).delete();
       await db.materials.where('courseId').equals(courseId).delete();
     },
   );
 }
 export async function deleteTask(taskId: string) {
-  await db.transaction('rw', [db.tasks, db.exams, db.sessions, db.timer], async () => {
+  await db.transaction('rw', [db.tasks, db.exams, db.sessions, db.timer, db.plans], async () => {
     await db.tasks.delete(taskId);
+    await db.plans
+      .where('taskId')
+      .equals(taskId)
+      .modify((p) => {
+        delete p.taskId;
+      });
     await db.sessions
       .where('taskId')
       .equals(taskId)
@@ -86,8 +99,10 @@ export async function startTimer(
   goal: number,
   courseId?: string,
   taskId?: string,
+  cycle = false,
 ) {
   const now = Date.now();
+  const prefs = preferences((await db.settings.get('main')) ?? {});
   await db.transaction('rw', db.timer, async () => {
     if (await db.timer.get('active')) throw Error('已有计时，请先结束当前计时');
     await db.timer.put({
@@ -100,15 +115,32 @@ export async function startTimer(
       anchor: now,
       elapsed: 0,
       segments: [],
+      cycle:
+        cycle && mode === 'pomodoro'
+          ? {
+              root: id(),
+              round: 1,
+              rounds: prefs.rounds,
+              focus: goal / 60,
+              short: prefs.shortMinutes,
+              long: prefs.longMinutes,
+              auto: prefs.autoAdvance,
+            }
+          : undefined,
       courseId,
       taskId,
     });
   });
 }
 export async function pauseTimer() {
-  await db.transaction('rw', db.timer, async () => {
+  await db.transaction('rw', [db.timer, db.sessions], async () => {
     const t = await db.timer.get('active');
     if (!t || !t.running) return;
+    if (t.mode !== 'stopwatch' && elapsedSeconds(t) >= t.goal) {
+      if (t.cycle) await advanceTimer(t.token);
+      else await finishTimer(true, '', t.token);
+      return;
+    }
     const segments = capturedSegments(t);
     await db.timer.update('active', {
       running: false,
@@ -160,3 +192,62 @@ export const safeURL = (url: string) => {
     return undefined;
   }
 };
+
+// A finite group ends after its long break; a stopped WebView never invents days of study.
+export async function advanceTimer(token: string, now = Date.now()) {
+  return db.transaction('rw', [db.timer, db.sessions], async () => {
+    let t = await db.timer.get('active');
+    if (!t || t.token !== token || !t.cycle) return;
+    let recorded = 0,
+      advanced = false;
+    for (let phase = 0; phase < 25 && t && t.running && elapsedSeconds(t, now) >= t.goal; phase++) {
+      const segments = capturedSegments(t, now);
+      const seconds = segments.reduce((n, s) => n + (s.end - s.start) / 1000, 0);
+      if (t.mode === 'pomodoro' && seconds >= 1 && !(await db.sessions.get(t.token))) {
+        await db.sessions.add({
+          id: t.token,
+          start: segments[0].start,
+          end: segments.at(-1)!.end,
+          seconds,
+          segments,
+          courseId: t.courseId,
+          taskId: t.taskId,
+          note: '',
+        });
+        recorded++;
+      }
+      const c: NonNullable<Timer['cycle']> = t.cycle!;
+      const end: number = t.anchor + Math.max(0, t.goal - t.elapsed) * 1000;
+      if (t.mode === 'long') {
+        await db.timer.delete('active');
+        return { recorded, advanced: true, completed: true };
+      }
+      const mode: Timer['mode'] =
+        t.mode === 'pomodoro' ? (c.round >= c.rounds ? 'long' : 'short') : 'pomodoro';
+      const round: number = t.mode === 'short' ? c.round + 1 : c.round;
+      const goal: number =
+        (mode === 'pomodoro' ? c.focus : mode === 'short' ? c.short : c.long) * 60;
+      t = {
+        ...t,
+        token: `${c.root}:${round}:${mode}`,
+        mode,
+        goal,
+        started: end,
+        anchor: end,
+        running: c.auto,
+        elapsed: 0,
+        segments: [],
+        cycle: { ...c, round },
+      };
+      await db.timer.put(t);
+      advanced = true;
+    }
+    return { recorded, advanced, completed: false };
+  });
+}
+export async function completeTask(taskId: string) {
+  await db.transaction('rw', db.tasks, async () => {
+    const task = await db.tasks.get(taskId);
+    if (task && !task.done) await toggleTask(taskId);
+  });
+}

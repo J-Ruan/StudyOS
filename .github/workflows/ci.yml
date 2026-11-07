@@ -57,6 +57,8 @@ jobs:
       signing: ${{ steps.signing.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -89,7 +91,7 @@ jobs:
             echo 'mode=release' >> "$GITHUB_OUTPUT"
           else
             echo 'mode=debug' >> "$GITHUB_OUTPUT"
-            echo '未提供完整正式签名配置，将生成明确标注的 Debug APK。' >> "$GITHUB_STEP_SUMMARY"
+            echo '未提供完整正式签名配置，仅生成 CI 测试 Debug APK，禁止本次正式发布。' >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: 构建可安装 Debug APK
         working-directory: android
@@ -135,6 +137,24 @@ jobs:
           name: android-smoke-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+      - name: 构建同一测试签名的 v1.1.0 升级基线
+        env:
+          LEGACY_WORKTREE: ${{ runner.temp }}/studyos-legacy
+        run: |
+          git worktree add --detach "$LEGACY_WORKTREE" v1.1.0
+          cd "$LEGACY_WORKTREE"
+          npm ci --no-audit --fund=false
+          npm run build:android:web
+          npx cap sync android
+          cd android
+          ./gradlew --no-daemon assembleDebug
+          mkdir -p "$RUNNER_TEMP/legacy-apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/legacy-apk/app-v1.1.0.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-legacy-apk
+          path: ${{ runner.temp }}/legacy-apk/*.apk
+          if-no-files-found: error
       - name: 移除临时正式签名文件
         if: always()
         run: rm -f "$RUNNER_TEMP/studyos-release.jks"
@@ -160,11 +180,17 @@ jobs:
         with:
           name: android-smoke-apk
           path: android/app/build/outputs/apk/debug/
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-legacy-apk
+          path: legacy-apk/
       - name: 开启运行器 KVM 设备访问
         run: |
           test -e /dev/kvm
           sudo chmod a+rw /dev/kvm
       - name: 安装 APK 并验证原生 WebView
+        env:
+          ANDROID_LEGACY_APK: legacy-apk/app-v1.1.0.apk
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -207,6 +233,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: 正式签名发布门槛
+        env:
+          SIGNING_MODE: ${{ needs.android.outputs.signing }}
+        run: |
+          if [ "$SIGNING_MODE" != release ]; then
+            echo '::error::缺少完整正式签名配置，禁止创建正式 Release 或发布 Debug 附件。请仓库所有者配置四项 ANDROID 签名 Secrets。'
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
@@ -234,9 +268,8 @@ jobs:
           fi
           notes="$RUNNER_TEMP/studyos-release-notes.md"
           cp "docs/RELEASE-${GITHUB_REF_NAME}.md" "$notes"
-          if [ "$SIGNING_MODE" = debug ]; then
-            printf '\n## 本次 APK 签名\n\n本次附件为 **Debug 签名 APK**。当前没有完整的正式签名配置，不能视为正式签名版。不同构建的 Debug 密钥可能不同；升级前请导出 JSON 备份，签名不一致时需先卸载旧版。卸载会删除该应用的本地数据。\n' >> "$notes"
-          else
-            printf '\n## 本次 APK 签名\n\n本次 Android 附件使用仓库配置的正式 Release 密钥签名。\n' >> "$notes"
-          fi
-          gh release create "$GITHUB_REF_NAME" "StudyOS-${GITHUB_REF_NAME}.zip" apk/*.apk --title "学序 $GITHUB_REF_NAME · Android APK" --notes-file "$notes" --verify-tag
+          test -z "$(find apk -name '*debug*' -print -quit)"
+          test -f "apk/StudyOS-${GITHUB_REF_NAME}-android.apk"
+          sha256sum apk/*.apk "StudyOS-${GITHUB_REF_NAME}.zip" | sed 's#  apk/#  #' > SHA256SUMS.txt
+          printf '\n## APK 签名与校验\n\n本次附件使用仓库长期 Release 密钥签名，已通过 apksigner 校验。下载 SHA256SUMS.txt 可核对附件完整性。\n' >> "$notes"
+          gh release create "$GITHUB_REF_NAME" "StudyOS-${GITHUB_REF_NAME}.zip" apk/*.apk SHA256SUMS.txt --title "学序 $GITHUB_REF_NAME · Android APK" --notes-file "$notes" --verify-tag

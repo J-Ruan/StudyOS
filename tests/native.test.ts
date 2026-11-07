@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mock = vi.hoisted(() => ({
   native: vi.fn(() => false),
+  saveDocument: vi.fn(),
   appListener: vi.fn(),
   keyboardListener: vi.fn(),
   minimize: vi.fn(),
@@ -16,6 +17,7 @@ const mock = vi.hoisted(() => ({
   background: vi.fn(),
   hideSplash: vi.fn(),
 }));
+vi.mock('../src/lib/device-tools', () => ({ DeviceTools: { saveDocument: mock.saveDocument } }));
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: mock.native },
   SystemBars: { setStyle: mock.systemStyle },
@@ -52,6 +54,7 @@ import { download } from '../src/lib/backup';
 beforeEach(() => {
   vi.clearAllMocks();
   mock.native.mockReturnValue(false);
+  mock.saveDocument.mockResolvedValue({ saved: true });
   mock.write.mockResolvedValue({ uri: 'file:///cache/StudyOS.json' });
   mock.read.mockResolvedValue({ files: [] });
   mock.share.mockResolvedValue({});
@@ -85,22 +88,34 @@ describe('platform file and link operations', () => {
     expect(revoke).toHaveBeenCalledWith('blob:backup');
   });
 
-  it('writes base64 to Android cache and shares its URI without storage permissions', async () => {
+  it('saves JSON through the Android system document picker and respects cancellation', async () => {
     mock.native.mockReturnValue(true);
-    await download(new Blob(['{"version":2}'], { type: 'application/json' }), 'StudyOS.json');
+    await download(new Blob(['{"version":3}'], { type: 'application/json' }), 'StudyOS.json');
+    expect(mock.saveDocument).toHaveBeenCalledWith({
+      name: 'StudyOS.json',
+      data: btoa('{"version":3}'),
+    });
+    expect(mock.share).not.toHaveBeenCalled();
+    mock.saveDocument.mockResolvedValueOnce({ saved: false });
+    await expect(download(new Blob(['x']), 'backup.json')).rejects.toThrow('取消');
+    mock.saveDocument.mockRejectedValueOnce(Error('空间不足'));
+    await expect(download(new Blob(['x']), 'backup.json')).rejects.toThrow('空间不足');
+  });
+  it('shares course files via private cache without storage permissions', async () => {
+    mock.native.mockReturnValue(true);
+    await download(new Blob(['course bytes']), 'notes.pdf');
     expect(mock.write).toHaveBeenCalledWith({
-      path: expect.stringMatching(/^studyos-share\/\d+-[^/]+\/StudyOS.json$/),
-      data: btoa('{"version":2}'),
+      path: expect.stringMatching(/^studyos-share\/\d+-[^/]+\/notes.pdf$/),
+      data: btoa('course bytes'),
       directory: 'CACHE',
       recursive: true,
     });
     expect(mock.share).toHaveBeenCalledWith({
-      title: 'StudyOS.json',
+      title: 'notes.pdf',
       files: ['file:///cache/StudyOS.json'],
       dialogTitle: '保存或分享文件',
     });
   });
-
   it('only expires its own old temporary folders and reports native failures', async () => {
     mock.native.mockReturnValue(true);
     mock.read.mockResolvedValue({
@@ -118,9 +133,9 @@ describe('platform file and link operations', () => {
     });
     expect(mock.share.mock.calls[0][0].title).toBe('.._file.pdf');
     mock.share.mockRejectedValueOnce(Error('分享不可用'));
-    await expect(download(new Blob(['x']), 'backup.json')).rejects.toThrow('分享不可用');
+    await expect(download(new Blob(['x']), 'notes.pdf')).rejects.toThrow('分享不可用');
     mock.write.mockRejectedValueOnce(Error('空间不足'));
-    await expect(download(new Blob(['x']), 'backup.json')).rejects.toThrow('空间不足');
+    await expect(download(new Blob(['x']), 'notes.pdf')).rejects.toThrow('空间不足');
   });
 
   it('opens web links externally and handles missing Obsidian without navigating the app', async () => {

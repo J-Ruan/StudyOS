@@ -14,6 +14,9 @@ import {
   Github,
   Bell,
   HardDrive,
+  ChartNoAxesColumnIncreasing,
+  CalendarDays,
+  NotebookPen,
 } from 'lucide-react';
 import { db, resetData } from '../lib/db';
 import { useStore, useUI, go } from '../lib/context';
@@ -24,6 +27,7 @@ import { addDemo } from '../lib/demo';
 import { isNativeApp } from '../lib/native';
 import { version } from '../../package.json';
 import { Button, IconButton, Field, SaveForm, Modal } from '../components/ui';
+import PreferencesPanel from '../components/PreferencesPanel';
 import Habits from './Habits';
 export default function Settings({ path }: { path: string }) {
   const d = useStore(),
@@ -102,11 +106,32 @@ export default function Settings({ path }: { path: string }) {
                 ))}
               </div>
             </section>
+            <PreferencesPanel />
             <section className="panel settings-links">
               <button onClick={() => go('/me/semester')}>
                 <BookOpen size={20} />
                 <span>学期与节次</span>
                 <span className="muted">{d.settings.semester?.name ?? '未设置'}</span>
+                <ChevronRight size={18} />
+              </button>
+              <button onClick={() => go('/stats')}>
+                <ChartNoAxesColumnIncreasing size={20} />
+                <span>学习统计</span>
+                <ChevronRight size={18} />
+              </button>
+              <button onClick={() => go('/schedule/exams')}>
+                <CalendarDays size={20} />
+                <span>考试</span>
+                <ChevronRight size={18} />
+              </button>
+              <button onClick={() => go('/schedule/plan')}>
+                <NotebookPen size={20} />
+                <span>学习计划</span>
+                <ChevronRight size={18} />
+              </button>
+              <button onClick={() => go('/stats/review')}>
+                <NotebookPen size={20} />
+                <span>每周复盘</span>
                 <ChevronRight size={18} />
               </button>
               <button onClick={() => go('/me/habits')}>
@@ -123,7 +148,6 @@ export default function Settings({ path }: { path: string }) {
                   onChange={(e) => db.settings.put({ ...d.settings, sound: e.target.checked })}
                 />
               </label>
-              <p className="settings-note">后台休眠时声音可能延迟，返回应用后会按实际时间校准。</p>
             </section>
             <section className="panel">
               <h2>数据与备份</h2>
@@ -132,6 +156,15 @@ export default function Settings({ path }: { path: string }) {
                   ? '数据保存在此应用。卸载或清除应用数据前请导出备份；Web 数据可通过 JSON 导入。'
                   : '数据保存在此浏览器。备份包含上传的课程资料；清理浏览器数据前请导出。'}
               </p>
+              <p className="backup-version">
+                数据库 v3 · JSON v3 · 最近导出{' '}
+                {d.settings.lastBackupAt
+                  ? new Date(d.settings.lastBackupAt).toLocaleString('zh-CN')
+                  : '暂无'}
+              </p>
+              {!d.settings.lastBackupAt || Date.now() - d.settings.lastBackupAt > 30 * 86400000 ? (
+                <p className="notice">建议定期导出备份，卸载前务必保存。</p>
+              ) : null}
               <div className="backup-actions">
                 <Button
                   variant="secondary"
@@ -143,7 +176,13 @@ export default function Settings({ path }: { path: string }) {
                         new Blob([await exportBackup()], { type: 'application/json' }),
                         `StudyOS-${localDate()}.json`,
                       );
-                      ui.notify(isNativeApp() ? '请在系统分享面板中选择保存位置' : '备份已导出');
+                      await db.transaction('rw', db.settings, async () => {
+                        await db.settings.put({
+                          ...((await db.settings.get('main')) ?? d.settings),
+                          lastBackupAt: Date.now(),
+                        });
+                      });
+                      ui.notify('备份已导出');
                     } catch (e) {
                       ui.notify(String(e));
                     } finally {
@@ -203,7 +242,7 @@ export default function Settings({ path }: { path: string }) {
           <aside>
             <section className="panel about-card">
               <div className="about-logo">
-                <BookOpen size={28} />
+                <img src={`${import.meta.env.BASE_URL}icon-192.png`} alt="学序图标" />
               </div>
               <h2>学序</h2>
               <p>StudyOS · {version}</p>

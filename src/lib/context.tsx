@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, initialSettings } from './db';
 import type {
@@ -13,6 +13,7 @@ import type {
   Timer,
   Material,
   Review,
+  StudyPlan,
 } from './models';
 import type { Occurrence } from './logic';
 export interface Data {
@@ -27,6 +28,7 @@ export interface Data {
   timer?: Timer;
   materials: Material[];
   reviews: Review[];
+  plans?: StudyPlan[];
 }
 export type Editor = {
   kind: 'course' | 'task' | 'exam' | 'habit' | 'session' | 'override';
@@ -46,25 +48,67 @@ export interface UI {
 export const UIContext = createContext<UI>(null!);
 export const useUI = () => useContext(UIContext);
 export function useData() {
-  return useLiveQuery(
-    async (): Promise<Data> => ({
-      courses: await db.courses.toArray(),
-      tasks: await db.tasks.toArray(),
-      exams: await db.exams.toArray(),
-      habits: await db.habits.toArray(),
-      checks: await db.checks.toArray(),
-      sessions: await db.sessions.toArray(),
-      settings: (await db.settings.get('main')) ?? initialSettings,
-      overrides: await db.overrides.toArray(),
-      timer: await db.timer.get('active'),
-      materials: await db.materials.toArray(),
-      reviews: await db.reviews.toArray(),
-    }),
-    [],
+  // Subscribe separately: a timer pause must not reread every historical session or file.
+  const courses = useLiveQuery(() => db.courses.toArray(), []);
+  const tasks = useLiveQuery(() => db.tasks.toArray(), []);
+  const exams = useLiveQuery(() => db.exams.toArray(), []);
+  const habits = useLiveQuery(() => db.habits.toArray(), []);
+  const checks = useLiveQuery(() => db.checks.toArray(), []);
+  const sessions = useLiveQuery(() => db.sessions.toArray(), []);
+  const settings = useLiveQuery(async () => (await db.settings.get('main')) ?? initialSettings, []);
+  const overrides = useLiveQuery(() => db.overrides.toArray(), []);
+  const active = useLiveQuery(async () => ({ timer: await db.timer.get('active') }), []);
+  const materials = useLiveQuery(() => db.materials.toArray(), []);
+  const reviews = useLiveQuery(() => db.reviews.toArray(), []);
+  const plans = useLiveQuery(() => db.plans.orderBy('start').toArray(), []);
+  return useMemo<Data | undefined>(
+    () =>
+      courses &&
+      tasks &&
+      exams &&
+      habits &&
+      checks &&
+      sessions &&
+      settings &&
+      overrides &&
+      active &&
+      materials &&
+      reviews &&
+      plans
+        ? {
+            courses,
+            tasks,
+            exams,
+            habits,
+            checks,
+            sessions,
+            settings,
+            overrides,
+            timer: active.timer,
+            materials,
+            reviews,
+            plans,
+          }
+        : undefined,
+    [
+      courses,
+      tasks,
+      exams,
+      habits,
+      checks,
+      sessions,
+      settings,
+      overrides,
+      active,
+      materials,
+      reviews,
+      plans,
+    ],
   );
 }
 export const DataContext = createContext<Data>(null!);
 export const useStore = () => useContext(DataContext);
 export function go(path: string) {
-  location.hash = path;
+  const event = new CustomEvent('studyos:navigate', { detail: path, cancelable: true });
+  if (window.dispatchEvent(event)) location.hash = path;
 }

@@ -1,7 +1,8 @@
-import { Component, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Component, useEffect, useMemo, useState, useRef, type ReactNode } from 'react';
 import {
   BookOpen,
   LayoutDashboard,
+  ListTodo,
   CalendarDays,
   Timer,
   ChartNoAxesColumnIncreasing,
@@ -12,7 +13,7 @@ import {
   ArrowUpRight,
 } from 'lucide-react';
 import { usePWA } from './lib/pwa';
-import { DataContext, UIContext, useData, go, type Editor, type UI } from './lib/context';
+import { DataContext, UIContext, useData, go, useStore, type Editor, type UI } from './lib/context';
 import { dailySeconds } from './lib/logic';
 import { localDate, duration } from './lib/time';
 import { Editors } from './components/Editors';
@@ -28,14 +29,26 @@ import {
   startNativeRuntime,
   syncNativeTheme,
 } from './lib/native';
+import { preferences } from './lib/models';
+import { listenNotifications, syncNotifications } from './lib/notifications';
 import { version } from '../package.json';
-const nav = [
+const webNav = [
   { path: '/', label: '首页', Icon: LayoutDashboard },
   { path: '/schedule', label: '日程', Icon: CalendarDays },
   { path: '/focus', label: '专注', Icon: Timer },
   { path: '/stats', label: '统计', Icon: ChartNoAxesColumnIncreasing },
   { path: '/me', label: '我的', Icon: UserRound },
 ];
+const androidUI = import.meta.env.MODE === 'android';
+const nav = androidUI
+  ? [
+      { path: '/', label: '今天', Icon: LayoutDashboard },
+      { path: '/schedule', label: '课程', Icon: CalendarDays },
+      { path: '/tasks', label: '任务', Icon: ListTodo },
+      { path: '/focus', label: '专注', Icon: Timer },
+      { path: '/me', label: '我的', Icon: UserRound },
+    ]
+  : webNav;
 export default function App() {
   const data = useData();
   const [path, setPath] = useState(location.hash.slice(1) || '/'),
@@ -90,6 +103,51 @@ export default function App() {
       }),
     [],
   );
+  const startup = useRef(false);
+  useEffect(() => {
+    if (data && !startup.current) {
+      startup.current = true;
+      if (androidUI && !location.hash) go(preferences(data.settings).startPage);
+    }
+  }, [data]);
+  useEffect(() => {
+    const leave = async (path: string) => {
+      if (document.querySelector('form[aria-busy="true"]')) {
+        setMessage('正在保存，请稍候');
+        return;
+      }
+      const discard = await new Promise<boolean>((resolve) =>
+        setConfirmation({
+          title: '放弃未保存的修改？',
+          detail: '留在当前页面可继续编辑。',
+          resolve,
+        }),
+      );
+      if (discard) location.hash = path;
+    };
+    const needsGuard = () =>
+      !document.querySelector('[role=dialog]') &&
+      !!document.querySelector('form[data-unsaved="true"]');
+    const navigate = (e: Event) => {
+      if (needsGuard()) {
+        e.preventDefault();
+        void leave((e as CustomEvent<string>).detail);
+      }
+    };
+    const link = (e: MouseEvent) => {
+      const a = e.target instanceof Element ? e.target.closest('a[href^="#/"]') : null;
+      if (a && needsGuard()) {
+        e.preventDefault();
+        void leave(a.getAttribute('href')!.slice(1));
+      }
+    };
+    window.addEventListener('studyos:navigate', navigate);
+    document.addEventListener('click', link, true);
+    return () => {
+      window.removeEventListener('studyos:navigate', navigate);
+      document.removeEventListener('click', link, true);
+    };
+  }, []);
   const loaded = !!data;
   useEffect(() => {
     if (loaded)
@@ -104,8 +162,13 @@ export default function App() {
         event.reason instanceof Error ? event.reason.message : '操作失败，请检查本机存储空间后重试',
       );
     };
+    const notice = (event: Event) => setMessage((event as CustomEvent<string>).detail);
+    window.addEventListener('studyos:notice', notice);
     window.addEventListener('unhandledrejection', error);
-    return () => window.removeEventListener('unhandledrejection', error);
+    return () => {
+      window.removeEventListener('unhandledrejection', error);
+      window.removeEventListener('studyos:notice', notice);
+    };
   }, []);
   useEffect(() => {
     if (!message) return;
@@ -122,6 +185,8 @@ export default function App() {
     const media = matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
       const dark = theme === 'dark' || (theme === 'system' && media.matches);
+      document.documentElement.dataset.accent = data?.settings.preferences?.accent ?? 'purple';
+      document.documentElement.dataset.platform = androidUI ? 'android' : 'web';
       document.documentElement.dataset.theme = dark ? 'dark' : 'light';
       void syncNativeTheme(dark).catch((error: unknown) => {
         setMessage(error instanceof Error ? error.message : '状态栏更新失败，请重试');
@@ -130,7 +195,7 @@ export default function App() {
     apply();
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
-  }, [theme]);
+  }, [theme, data?.settings.preferences?.accent]);
   useEffect(() => {
     window.scrollTo({ top: 0 });
     document.title = `${nav.find((n) => (n.path === '/' ? path === '/' : path.startsWith(n.path)))?.label ?? '学序'} · 学序`;
@@ -154,6 +219,15 @@ export default function App() {
     }),
     [selection],
   );
+  const sessionRows = data?.sessions;
+  const weekSeconds = useMemo(() => {
+    if (!sessionRows) return 0;
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    return [...dailySeconds(sessionRows)]
+      .filter(([day]) => day >= localDate(weekStart) && day <= localDate(now))
+      .reduce((n, [, s]) => n + s, 0);
+  }, [sessionRows, now]);
   if (!data)
     return (
       <div className="loading-screen">
@@ -161,22 +235,37 @@ export default function App() {
         <p>正在打开学序…</p>
       </div>
     );
+  const route = path.startsWith('/tasks')
+    ? 'tasks'
+    : path.startsWith('/schedule')
+      ? 'schedule'
+      : path.startsWith('/focus')
+        ? 'focus'
+        : path.startsWith('/stats')
+          ? 'stats'
+          : path.startsWith('/me')
+            ? 'me'
+            : 'home';
   const current =
-    nav.find((n) => (n.path === '/' ? path === '/' : path.startsWith(n.path)))?.path ?? '/';
-  const weekStart = new Date(now);
-  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-  const weekSeconds = [...dailySeconds(data.sessions)]
-    .filter(([day]) => day >= localDate(weekStart) && day <= localDate(now))
-    .reduce((n, [, s]) => n + s, 0);
+    route === 'tasks'
+      ? '/tasks'
+      : androidUI && path.includes('/tasks')
+        ? '/tasks'
+        : route === 'stats' && androidUI
+          ? '/me'
+          : route === 'home'
+            ? '/'
+            : `/${route}`;
   return (
     <UIContext.Provider value={ui}>
       <DataContext.Provider value={data}>
         <TimerRuntime />
+        <ReminderRuntime />
         <div className="app-shell">
           <aside className="sidebar">
             <a className="brand" href="#/">
               <span>
-                <BookOpen size={24} />
+                <img src={`${import.meta.env.BASE_URL}icon-192.png`} alt="" />
               </span>
               <strong>
                 学序<i>StudyOS</i>
@@ -237,14 +326,14 @@ export default function App() {
                 </IconButton>
               </div>
             </header>
-            <main tabIndex={-1} id="main-content" key={current === '/' ? 'home' : current}>
-              {current === '/' ? (
+            <main tabIndex={-1} id="main-content" key={route}>
+              {route === 'home' ? (
                 <Dashboard />
-              ) : current === '/schedule' ? (
+              ) : route === 'schedule' || route === 'tasks' ? (
                 <Schedule path={path} />
-              ) : current === '/focus' ? (
+              ) : route === 'focus' ? (
                 <Focus path={path} key={`${selection.courseId}-${selection.taskId}`} />
-              ) : current === '/stats' ? (
+              ) : route === 'stats' ? (
                 <Stats path={path} />
               ) : (
                 <Settings path={path} />
@@ -365,6 +454,26 @@ export default function App() {
       </DataContext.Provider>
     </UIContext.Provider>
   );
+}
+function ReminderRuntime() {
+  const { tasks, exams, settings, timer } = useStore();
+  useEffect(
+    () =>
+      listenNotifications((message) =>
+        window.dispatchEvent(new CustomEvent('studyos:notice', { detail: message })),
+      ),
+    [],
+  );
+  useEffect(() => {
+    const run = () =>
+      void syncNotifications({ tasks, exams, settings, timer }).catch((e) =>
+        window.dispatchEvent(new CustomEvent('studyos:notice', { detail: String(e) })),
+      );
+    run();
+    window.addEventListener(NATIVE_RESUME_EVENT, run);
+    return () => window.removeEventListener(NATIVE_RESUME_EVENT, run);
+  }, [tasks, exams, settings, timer]);
+  return null;
 }
 export class ErrorBoundary extends Component<
   { children: ReactNode },

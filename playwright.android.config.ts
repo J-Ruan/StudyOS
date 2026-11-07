@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/android-web',
+  outputDir: 'test-results/android',
   workers: 1,
   timeout: 60000,
   use: {

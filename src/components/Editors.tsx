@@ -22,6 +22,7 @@ import {
 import { deleteCourse, deleteTask, safeURL } from '../lib/actions';
 import { atTime, dateTimeInput, fromInput, localDate, duration } from '../lib/time';
 import { download } from '../lib/backup';
+import { ReminderEditor } from './ReminderEditor';
 import { Modal, Button, IconButton, SaveForm, Field } from './ui';
 const colors = ['#ad83c4', '#b47e9b', '#7e9b93', '#8499b6', '#b39873', '#8c88b6'];
 function CourseSelect({
@@ -51,6 +52,17 @@ function CourseSelect({
   );
 }
 export function Editors({ editor }: { editor: Editor }) {
+  const data = useStore();
+  const records = {
+    course: data.courses,
+    task: data.tasks,
+    exam: data.exams,
+    habit: data.habits,
+    session: data.sessions,
+    override: data.overrides,
+  };
+  // Live table subscriptions can report deletion before the caller closes its modal.
+  if (editor.id && !records[editor.kind].some((row) => row.id === editor.id)) return null;
   switch (editor.kind) {
     case 'course':
       return <CourseEditor editor={editor} />;
@@ -316,6 +328,30 @@ function CourseEditor({ editor }: { editor: Editor }) {
             )}{' '}
             专注
           </p>
+          <div className="linked-records">
+            {data.tasks
+              .filter((t) => t.courseId === c.id && !t.done)
+              .map((t) => (
+                <button
+                  className="text-button"
+                  key={t.id}
+                  onClick={() => ui.open({ kind: 'task', id: t.id })}
+                >
+                  {t.title}
+                </button>
+              ))}
+            {data.exams
+              .filter((e) => e.courseId === c.id && !e.archived)
+              .map((e) => (
+                <button
+                  className="text-button"
+                  key={e.id}
+                  onClick={() => ui.open({ kind: 'exam', id: e.id })}
+                >
+                  {e.name}
+                </button>
+              ))}
+          </div>
           <h3>课程资料</h3>
           <div className="resource-list">
             {data.materials
@@ -461,24 +497,6 @@ function TaskEditor({ editor }: { editor: Editor }) {
               onChange={(e) => patch({ title: e.target.value })}
             />
           </Field>
-          <Field label="任务类型">
-            <select
-              value={t.kind}
-              onChange={(e) => patch({ kind: e.target.value as Task['kind'] })}
-            >
-              {Object.entries(kindNames).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="关联课程">
-            <CourseSelect
-              value={t.courseId}
-              onChange={(courseId) => patch({ courseId: courseId || undefined })}
-            />
-          </Field>
           <Field label="截止时间">
             <input
               type="datetime-local"
@@ -487,98 +505,124 @@ function TaskEditor({ editor }: { editor: Editor }) {
               onChange={(e) => patch({ due: fromInput(e.target.value) })}
             />
           </Field>
-          <Field label="优先级">
-            <select
-              value={t.priority}
-              onChange={(e) => patch({ priority: e.target.value as Task['priority'] })}
-            >
-              <option value="high">高</option>
-              <option value="medium">中</option>
-              <option value="low">低</option>
-            </select>
-          </Field>
-          <Field label="预计耗时（分钟）">
-            <input
-              required
-              type="number"
-              min="1"
-              max="1440"
-              value={t.estimate}
-              onChange={(e) => patch({ estimate: +e.target.value })}
-            />
-          </Field>
-          <Field label="重复规则">
-            <select
-              value={t.repeat}
-              onChange={(e) => patch({ repeat: e.target.value as Task['repeat'] })}
-            >
-              <option value="none">不重复</option>
-              <option value="daily">每天</option>
-              <option value="weekly">每周</option>
-              <option value="monthly">每月</option>
-            </select>
-          </Field>
-          <Field label="备注" wide>
-            <textarea value={t.notes} onChange={(e) => patch({ notes: e.target.value })} />
-          </Field>
         </div>
-        <h3>子任务</h3>
-        {t.subtasks.map((s) => (
-          <div className="subtask" key={s.id}>
+        <details className="advanced-fields" open={exists ? true : undefined}>
+          <summary>更多选项</summary>
+          <div className="form-grid">
+            <Field label="任务类型">
+              <select
+                value={t.kind}
+                onChange={(e) => patch({ kind: e.target.value as Task['kind'] })}
+              >
+                {Object.entries(kindNames).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="关联课程">
+              <CourseSelect
+                value={t.courseId}
+                onChange={(courseId) => patch({ courseId: courseId || undefined })}
+              />
+            </Field>
+            <Field label="优先级">
+              <select
+                value={t.priority}
+                onChange={(e) => patch({ priority: e.target.value as Task['priority'] })}
+              >
+                <option value="high">高</option>
+                <option value="medium">中</option>
+                <option value="low">低</option>
+              </select>
+            </Field>
+            <Field label="预计耗时（分钟）">
+              <input
+                required
+                type="number"
+                min="1"
+                max="1440"
+                value={t.estimate}
+                onChange={(e) => patch({ estimate: +e.target.value })}
+              />
+            </Field>
+            <Field label="重复规则">
+              <select
+                value={t.repeat}
+                onChange={(e) => patch({ repeat: e.target.value as Task['repeat'] })}
+              >
+                <option value="none">不重复</option>
+                <option value="daily">每天</option>
+                <option value="weekly">每周</option>
+                <option value="monthly">每月</option>
+              </select>
+            </Field>
+            <Field label="备注" wide>
+              <textarea value={t.notes} onChange={(e) => patch({ notes: e.target.value })} />
+            </Field>
+          </div>
+          <h3>子任务</h3>
+          {t.subtasks.map((s) => (
+            <div className="subtask" key={s.id}>
+              <input
+                type="checkbox"
+                aria-label={s.title}
+                checked={s.done}
+                onChange={(e) =>
+                  patch({
+                    subtasks: t.subtasks.map((v) =>
+                      v.id === s.id ? { ...v, done: e.target.checked } : v,
+                    ),
+                  })
+                }
+              />
+              <span>{s.title}</span>
+              <IconButton
+                type="button"
+                label={`删除子任务 ${s.title}`}
+                onClick={() => patch({ subtasks: t.subtasks.filter((v) => v.id !== s.id) })}
+              >
+                <Trash2 size={15} />
+              </IconButton>
+            </div>
+          ))}
+          <div className="input-action">
             <input
-              type="checkbox"
-              aria-label={s.title}
-              checked={s.done}
-              onChange={(e) =>
-                patch({
-                  subtasks: t.subtasks.map((v) =>
-                    v.id === s.id ? { ...v, done: e.target.checked } : v,
-                  ),
-                })
-              }
+              aria-label="子任务名称"
+              placeholder="添加子任务"
+              value={sub}
+              onChange={(e) => setSub(e.target.value)}
             />
-            <span>{s.title}</span>
             <IconButton
               type="button"
-              label={`删除子任务 ${s.title}`}
-              onClick={() => patch({ subtasks: t.subtasks.filter((v) => v.id !== s.id) })}
+              label="添加子任务"
+              onClick={() => {
+                if (sub.trim()) {
+                  patch({
+                    subtasks: [...t.subtasks, { id: id(), title: sub.trim(), done: false }],
+                  });
+                  setSub('');
+                }
+              }}
             >
-              <Trash2 size={15} />
+              <Plus size={18} />
             </IconButton>
           </div>
-        ))}
-        <div className="input-action">
-          <input
-            aria-label="子任务名称"
-            placeholder="添加子任务"
-            value={sub}
-            onChange={(e) => setSub(e.target.value)}
-          />
-          <IconButton
-            type="button"
-            label="添加子任务"
-            onClick={() => {
-              if (sub.trim()) {
-                patch({ subtasks: [...t.subtasks, { id: id(), title: sub.trim(), done: false }] });
-                setSub('');
-              }
-            }}
-          >
-            <Plus size={18} />
-          </IconButton>
-        </div>
-        {t.scheduledStart && (
-          <p className="muted">
-            自习安排：{dateTimeInput(t.scheduledStart).replace('T', ' ')}
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => patch({ scheduledStart: undefined, scheduledEnd: undefined })}
-            >
-              取消安排
-            </button>
-          </p>
-        )}
+          {t.scheduledStart && (
+            <p className="muted">
+              自习安排：{dateTimeInput(t.scheduledStart).replace('T', ' ')}
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => patch({ scheduledStart: undefined, scheduledEnd: undefined })}
+              >
+                取消安排
+              </button>
+            </p>
+          )}
+          <ReminderEditor value={t.reminders} onChange={(reminders) => patch({ reminders })} />
+        </details>
       </SaveForm>
       {exists && (
         <div className="detail-footer">
@@ -714,6 +758,7 @@ function ExamEditor({ editor }: { editor: Editor }) {
             onChange={(v) => patch({ archived: v.target.checked })}
           />
         </label>
+        <ReminderEditor exam value={e.reminders} onChange={(reminders) => patch({ reminders })} />
       </SaveForm>
     </Modal>
   );

@@ -1,31 +1,33 @@
-# v1.1.0 Android 验证记录
+# v1.2.0 Android 验证
 
-此文档区分源码检查、浏览器回归、APK 编译检查、模拟器和真实手机验证。执行结果由本次实际运行证据填写；配置了命令不等于已经执行成功。
+## 环境和构建
 
-## 构建约束
+Node 24、JDK 21、Capacitor 8、AGP 8.13.0、Gradle 8.14.3、SDK 36 / Build Tools 36.0.0；最低 SDK 24。
 
-- 复用现有 React / TypeScript / Dexie 代码，数据库名称为 `studyos`，版本 v2，备份格式 v2。
-- Web 构建使用 `/StudyOS/`，保留 Service Worker 缓存与更新。
-- Android 构建使用 `./`，输出 `dist-android/`，不注册 Web Service Worker，不配置远程 `server.url`。
-- Android 包名 `com.jruan.studyos`；v1.1.0，versionCode 110；min SDK 24，target / compile SDK 36。
-- Node 24，JDK 21，Capacitor 8，AGP 8.13.0，Gradle 8.14.3，Build Tools 36.0.0。
+前端 Web 使用 `/StudyOS/` 和完整 PWA 缓存；Android 使用 `./`、内置资源、无远程 server.url、无 Web Service Worker。数据库为 studyos v3，JSON 导出格式 v3，支持 v1/v2 历史备份。
 
-## 验证范围
+## 已实际执行的本地检查
 
-| 项目         | 检查内容                                                                                        |
-| ------------ | ----------------------------------------------------------------------------------------------- |
-| Web 回归     | 类型、ESLint、单元/数据集成、生产构建、原有关键路径 E2E、PWA 更新与离线启动                     |
-| Android 资源 | 相对路径资源存在；不存在 `/StudyOS/assets/`；APK 内包含 HTML、CSS、JS、图标；不加载远程网页主体 |
-| APK          | assembleDebug；签名验证；包名、versionName、versionCode；通用 APK 而非 AAB                      |
-| 原生桥接     | 返回、未保存编辑保护、状态栏、启动页、键盘、安全区域、恢复时计时校准                            |
-| 数据         | 保留 v1 → v2 升级；JSON v2 跨平台格式；无效导入回滚；不会在启动时重置数据库                     |
-| 模拟器       | 安装 APK、启动、页面和数据操作、系统返回、离线、主题、横竖屏与计时恢复                          |
-| 真实手机     | 需独立真机执行结果；不能用响应式宽度或模拟器冒充                                                |
+- `npm run typecheck`、`npm run lint` 通过。
+- `npm test`：91 项单元/集成测试通过。
+- `npm run build`、`npm run build:android:web` 通过。
+- `npm run test:e2e`：17 项 Web/PWA 回归通过。
+- `npm run test:android:web`：11 项 Android 资源、手机宽度、跨来源迁移和新增功能浏览器测试通过。
+- `npm audit --audit-level=low`：0 个已知漏洞。
+- Android 原生 Debug 工程实际编译成功；正式签名未提供时 assembleRelease 必须拒绝执行。
 
-## 当前实际结果
+浏览器测试覆盖 360 / 375 / 390 / 412 / 432px，及原有平板、桌面、深色、PWA 更新、离线、时区和夏令时。新增业务测试覆盖 CSV/XLSX 真文件解析、去重与冲突、预览确认、计划原子写入、番茄跨阶段/暂停/幂等结算、原生调度调用、权限拒绝降级、偏好持久化和 v2 → v3 数据迁移。
 
-Android 工程已在本机实际编译并通过 APK 验证脚本：Debug APK 4,572,546 字节，包名 `com.jruan.studyos`，versionName `1.1.0`，versionCode `110`，min SDK 24，target SDK 36，签名校验有效；检查到 18 个内置前端资源，不包含远程 `server.url` 或 Web Service Worker。此结果只证明构建、签名和包内资源检查通过，不替代实际安装运行。
+## 原生模拟器检查
 
-本机本轮 Debug 构建 SHA-256：`dc2f04cb20826f3564592dacf8a72c368f76b852c61775df002313a4cbc98cce`。Debug 签名证书 SHA-256：`c51370933cda9e75e300dc312b75bd1ce1a0778488bdfd9d77abada8214e9bf8`。这些是本机构建记录，不能据此假定 CI 构建会使用相同 Debug 密钥。缺少正式签名配置时，Release 构建保护按预期拒绝执行，不会产生冒充正式签名的 APK。
+CI 使用 API 35 x86_64 / Pixel 6 / KVM，安装真实 APK。源码配置的检查不自动算作通过；最终实际运行链接和结果在完成后填写。
 
-本机没有 `/dev/kvm`，未进行本机 Android 模拟器或真机验证。CI 已在 API 35 模拟器安装并运行真实 APK，首次断网启动、课程与任务、系统返回、后台计时、真实分享面板与缓存 JSON、系统 Documents 文件选择器导入及重复合并、深色、进程关闭后离线重启和横竖屏检查全部通过。执行证据：[PR 校验运行 42255594548](https://github.com/J-Ruan/StudyOS/actions/runs/42255594548)。这属于模拟器测试，未进行真实手机测试。本机 TypeScript、ESLint、63 项单元/集成测试、17 条原 Web/PWA 端到端测试及 6 条 Android 资源/手机宽度/跨来源 JSON 迁移测试均已执行通过。
+检查脚本包括：同一测试签名的 v1.1.0 原地覆盖升级（不清除应用数据）、11 类历史实体与计划迁移、离线启动、课程/任务、系统返回、实际通知权限、AlarmManager 触发、通知栏点击、专注通知暂停、锁屏与前后台恢复、原生 ACTION_CREATE_DOCUMENT 保存、原生 Documents JSON 和 XLSX 导入、主题、冷启动及横屏。
+
+本机没有 /dev/kvm，不将本机浏览器模拟宽度冒充 Android 模拟器。真实手机、系统重启后的提醒恢复、各厂商省电策略和 Android 7 的通知偏好兼容尚未验证。重启恢复依赖官方插件声明的 Boot Receiver；强制停止不承诺后台提醒。
+
+## 发布保护
+
+正式 Release 必须使用固定正式密钥，执行 `apksigner verify` 和 `android-verify.mjs --release`；禁止用 Debug 附件替代。Release 需包含 SHA256SUMS.txt。PR 使用 Debug APK 验证，不读取正式密钥；升级测试中的 v1.1.0 APK从历史标签源码构建，专门使用同一运行器的测试签名，不重新签名或覆盖历史公开附件。
+
+历史 v1.1.0 的验证记录保存在 [ANDROID-VALIDATION-v1.1.0.md](ANDROID-VALIDATION-v1.1.0.md)。

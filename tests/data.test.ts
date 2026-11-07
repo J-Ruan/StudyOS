@@ -163,7 +163,7 @@ describe('备份验证与原子恢复', () => {
     await expect(importBackup(JSON.stringify(invalid), 'replace')).rejects.toThrow('不合法');
     expect((await db.tasks.get('t'))?.title).toBe(task.title);
     expect(() => parseBackup('{')).toThrow();
-    expect(() => parseBackup(original.replace('"version":2', '"version":99'))).toThrow();
+    expect(() => parseBackup(original.replace('"version":3', '"version":99'))).toThrow();
   });
   it('事务中途写入失败，会回滚先前清空与写入', async () => {
     await db.tasks.add(task);
@@ -232,7 +232,7 @@ describe('备份验证与原子恢复', () => {
   });
 });
 describe('IndexedDB 版本升级', () => {
-  it('v1 数据库升级至 v2 保留任务并补充旧记录区间', async () => {
+  it('v1 数据库升级至 v3 保留任务并补充旧记录区间', async () => {
     const name = `migration-${crypto.randomUUID()}`;
     const old = new Dexie(name);
     old.version(1).stores({

@@ -15,7 +15,7 @@ android {
         applicationId "com.jruan.studyos"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 110
+        versionCode 120
         versionName new groovy.json.JsonSlurper().parse(rootProject.file("../package.json")).version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

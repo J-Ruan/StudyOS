@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import {
   ArrowUpRight,
   ArrowRight,
@@ -13,6 +14,9 @@ import { useStore, useUI, go } from '../lib/context';
 import { occurrences, sortTasks, dailySeconds } from '../lib/logic';
 import { localDate, clockTime, examDays, fullDate } from '../lib/time';
 import { Button, Empty, SectionTitle } from '../components/ui';
+import { startTimer, resumeTimer } from '../lib/actions';
+import { preferences } from '../lib/models';
+import { enableFocusSound } from '../lib/sound';
 import { TaskList } from '../components/TaskList';
 export default function Dashboard() {
   const d = useStore(),
@@ -26,7 +30,7 @@ export default function Dashboard() {
   const exam = d.exams
     .filter((e) => !e.archived && e.at >= now && examDays(e.at) <= 30)
     .sort((a, b) => a.at - b.at)[0];
-  const seconds = dailySeconds(d.sessions).get(today) ?? 0;
+  const seconds = useMemo(() => dailySeconds(d.sessions).get(today) ?? 0, [d.sessions, today]);
   return (
     <>
       <div className="page-heading">
@@ -45,7 +49,7 @@ export default function Dashboard() {
           新建任务
         </Button>
       </div>
-      <div className="overview">
+      <div className="overview dashboard-overview">
         <button onClick={() => go('/schedule')}>
           <span>
             <CalendarDays size={18} />
@@ -84,20 +88,6 @@ export default function Dashboard() {
       </div>
       <div className="dashboard-grid">
         <div className="dashboard-main">
-          <section className="panel tasks-panel">
-            <SectionTitle action="查看全部" onAction={() => go('/schedule/tasks')}>
-              今日任务 <span className="count">{tasks.length}</span>
-            </SectionTitle>
-            {tasks.length ? (
-              <TaskList tasks={tasks.slice(0, 5)} />
-            ) : (
-              <Empty title={d.tasks.length ? '今日任务已完成' : '今天没有待办'} />
-            )}
-            <button className="add-row" onClick={() => ui.open({ kind: 'task' })}>
-              <Plus size={17} />
-              添加任务
-            </button>
-          </section>
           <section className="panel">
             <SectionTitle action="周课表" onAction={() => go('/schedule')}>
               接下来的课程
@@ -141,16 +131,54 @@ export default function Dashboard() {
               />
             )}
           </section>
+          <section className="panel tasks-panel">
+            <SectionTitle action="查看全部" onAction={() => go('/schedule/tasks')}>
+              今日任务 <span className="count">{tasks.length}</span>
+            </SectionTitle>
+            {tasks.length ? (
+              <TaskList tasks={tasks.slice(0, 5)} />
+            ) : (
+              <Empty title={d.tasks.length ? '今日任务已完成' : '今天没有待办'} />
+            )}
+            <button className="add-row" onClick={() => ui.open({ kind: 'task' })}>
+              <Plus size={17} />
+              添加任务
+            </button>
+          </section>
         </div>
         <aside className="dashboard-aside">
           <section className="focus-card">
             <span className="focus-symbol">
               <Timer size={26} />
             </span>
-            <h2>{d.timer ? '计时进行中' : '25:00'}</h2>
+            <h2>
+              {d.timer
+                ? d.timer.running
+                  ? '计时进行中'
+                  : '计时已暂停'
+                : `${String(d.settings.preferences?.focusMinutes ?? 25).padStart(2, '0')}:00`}
+            </h2>
             <div className="focus-card-bottom">
               <span>{d.timer ? '继续当前计时' : '番茄专注'}</span>
-              <Button onClick={() => ui.focus()}>
+              <Button
+                onClick={async () => {
+                  enableFocusSound();
+                  try {
+                    if (!d.timer)
+                      await startTimer(
+                        'pomodoro',
+                        preferences(d.settings).focusMinutes * 60,
+                        undefined,
+                        undefined,
+                        true,
+                      );
+                    else if (!d.timer.running) await resumeTimer();
+                    ui.focus();
+                  } catch (e) {
+                    ui.notify(String(e));
+                  }
+                }}
+              >
                 <Play size={16} fill="currentColor" />
                 {d.timer ? '返回专注' : '开始专注'}
               </Button>

@@ -10,8 +10,10 @@ import {
   overrideSchema,
   settingsSchema,
   reviewSchema,
+  planSchema,
 } from './models';
 import { safeURL } from './actions';
+import { DeviceTools } from './device-tools';
 import { isNativeApp, shareNativeFile } from './native';
 const encodedMaterial = z
   .object({
@@ -29,7 +31,7 @@ const encodedMaterial = z
 const list = <T extends z.ZodType>(schema: T) => z.array(schema).max(200000);
 const backupSchema = z.object({
   app: z.literal('StudyOS'),
-  version: z.literal(2),
+  version: z.literal(3),
   exportedAt: z.string(),
   data: z.object({
     courses: list(courseSchema),
@@ -42,6 +44,7 @@ const backupSchema = z.object({
     settings: list(settingsSchema),
     reviews: list(reviewSchema),
     materials: list(encodedMaterial),
+    plans: list(planSchema),
   }),
 });
 async function base64(blob: Blob): Promise<string> {
@@ -63,6 +66,7 @@ export async function exportBackup(database: StudyDB = db) {
     overrides: await database.overrides.toArray(),
     settings: await database.settings.toArray(),
     reviews: await database.reviews.toArray(),
+    plans: await database.plans.toArray(),
     materials: await database.materials.toArray(),
   }));
   const materials = await Promise.all(
@@ -73,7 +77,7 @@ export async function exportBackup(database: StudyDB = db) {
   );
   return JSON.stringify({
     app: 'StudyOS',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     data: { ...snapshot, materials },
   });
@@ -105,6 +109,32 @@ export function parseBackup(raw: string) {
       s.segments ??= [{ start: s.start, end: s.start + s.seconds * 1000 }];
       s.note ??= '';
     }
+  }
+  if (value?.app === 'StudyOS' && value.version === 2 && value.data) {
+    value.version = 3;
+    value.data.plans ??= (value.data.tasks ?? [])
+      .filter(
+        (t: { scheduledStart?: number; scheduledEnd?: number }) =>
+          Number.isFinite(t.scheduledStart) && Number.isFinite(t.scheduledEnd),
+      )
+      .map(
+        (t: {
+          id: string;
+          title: string;
+          courseId?: string;
+          scheduledStart: number;
+          scheduledEnd: number;
+          done: boolean;
+        }) => ({
+          id: `legacy:${t.id}`,
+          taskId: t.id,
+          courseId: t.courseId,
+          title: t.title,
+          start: t.scheduledStart,
+          end: t.scheduledEnd,
+          done: t.done,
+        }),
+      );
   }
   const parsed = backupSchema.safeParse(value);
   if (!parsed.success)
@@ -176,7 +206,14 @@ export async function importBackup(raw: string, mode: 'merge' | 'replace', datab
 }
 export async function download(blob: Blob, name: string) {
   if (isNativeApp()) {
-    await shareNativeFile(blob, name);
+    if (/\.json$/i.test(name)) {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 32768)
+        binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+      const result = await DeviceTools.saveDocument({ name, data: btoa(binary) });
+      if (!result.saved) throw Error('已取消保存备份');
+    } else await shareNativeFile(blob, name);
     return;
   }
   const url = URL.createObjectURL(blob);

@@ -3046,3 +3046,563 @@ textarea {
 .priority-high {
   color: var(--danger);
 }
+
+/* v1.2: restrained mobile layouts and shared interaction targets. */
+:root[data-accent='rose'] {
+  --accent: #b66f90;
+  --accent-text: #96516f;
+  --accent-soft: #f5e8ee;
+}
+:root[data-accent='teal'] {
+  --accent: #518b82;
+  --accent-text: #327267;
+  --accent-soft: #e4f1ee;
+}
+:root[data-accent='blue'] {
+  --accent: #6c86b5;
+  --accent-text: #4e6c9b;
+  --accent-soft: #e9eef7;
+}
+:root[data-theme='dark'][data-accent='rose'] {
+  --accent: #d397b3;
+  --accent-text: #edbad0;
+  --accent-soft: #422c38;
+}
+:root[data-theme='dark'][data-accent='teal'] {
+  --accent: #85bdb1;
+  --accent-text: #afe0d5;
+  --accent-soft: #243b36;
+}
+:root[data-theme='dark'][data-accent='blue'] {
+  --accent: #9cb4dd;
+  --accent-text: #bfcfee;
+  --accent-soft: #2b3547;
+}
+.primary:hover {
+  background: var(--accent);
+  filter: brightness(0.94);
+}
+.advanced-fields,
+.preference-section,
+.reminder-options {
+  margin: 20px 0;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+summary {
+  cursor: pointer;
+  min-height: 48px;
+  padding: 12px 0;
+  font-weight: 550;
+}
+.advanced-fields[open] > summary,
+.preference-section[open] > summary {
+  margin-bottom: 12px;
+}
+.preferences-panel h2 {
+  margin-bottom: 22px;
+}
+.preferences-panel .form-footer {
+  margin-top: 12px;
+}
+.reminder-presets,
+.reminder-list {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.reminder-presets label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+}
+.reminder-chip {
+  min-height: 44px;
+  border: 0;
+  border-radius: 22px;
+  padding: 10px 14px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.reminder-options .input-action {
+  margin: 12px 0;
+}
+.bulk-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+.bulk-check {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  accent-color: var(--accent);
+}
+.task-quick-actions {
+  display: grid;
+  gap: 12px;
+}
+.task-content {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.linked-records {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px 0;
+}
+.course-view-switch {
+  margin-bottom: 16px;
+  width: fit-content;
+}
+.import-entry {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.import-steps {
+  color: var(--muted);
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+.import-steps strong {
+  color: var(--accent-text);
+}
+.import-summary {
+  padding: 18px 0;
+  font-weight: 550;
+}
+.import-preview {
+  max-height: 320px;
+  overflow: auto;
+}
+.import-preview article {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.import-preview article span {
+  color: var(--muted);
+  font-size: 14px;
+}
+.import-preview article span:last-child {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.agenda-days {
+  touch-action: pan-y;
+}
+.agenda-day {
+  margin: 12px 0 24px;
+}
+.agenda-day .section-title {
+  margin-bottom: 12px;
+}
+.agenda-lesson {
+  width: 100%;
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--course-color, var(--accent));
+  border-radius: 16px;
+  padding: 21px 18px;
+  margin: 10px 0;
+  color: var(--text);
+}
+.agenda-lesson time {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.agenda-lesson time span {
+  display: block;
+  font-size: 14px;
+  font-weight: 400;
+  margin-top: 7px;
+  color: var(--muted);
+}
+.agenda-lesson h3 {
+  font-size: 17px;
+}
+.agenda-lesson p {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 7px;
+}
+.agenda-state {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--accent-text);
+}
+.agenda-plan {
+  border-left-style: dashed;
+  background: var(--accent-soft);
+}
+.cycle-stage {
+  color: var(--accent-text);
+  font-size: 15px;
+  margin: 22px 0 0;
+}
+.plan-preview {
+  max-height: 52dvh;
+  overflow: auto;
+  margin-top: 20px;
+}
+.plan-preview .panel {
+  margin-bottom: 12px;
+}
+.plan-done {
+  opacity: 0.65;
+}
+.plan-done strong {
+  text-decoration: line-through;
+}
+.free-time-details {
+  margin: 18px 0;
+}
+.backup-version {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin-top: 14px;
+}
+.preference-section .notice {
+  margin: 16px 0;
+  font-size: 14px;
+}
+:root[data-platform='android'] .dashboard-overview,
+:root[data-platform='android'] .weekly-link {
+  display: none;
+}
+:root[data-platform='android'] .dashboard-grid {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+:root[data-platform='android'] .topbar > div:first-child {
+  font-size: 16px;
+  font-weight: 600;
+}
+:root[data-platform='android'] .topbar > div:first-child span {
+  font-size: 0;
+}
+:root[data-platform='android'] .topbar > div:first-child span::after {
+  content: '学序';
+  font-size: 17px;
+}
+:root[data-platform='android'] .panel {
+  border-radius: 18px;
+  box-shadow: none;
+}
+.brand img,
+.about-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+}
+@media (max-width: 600px) {
+  :root {
+    font-size: 16px;
+  }
+  h1 {
+    font-size: 32px;
+    letter-spacing: -0.8px;
+  }
+  h2 {
+    font-size: 19px;
+  }
+  .page-heading {
+    margin-bottom: 26px;
+  }
+  .page-heading .eyebrow {
+    font-size: 14px;
+    margin-bottom: 9px;
+  }
+  .button,
+  .icon-button,
+  .text-button,
+  input:not([type='checkbox']):not([type='radio']),
+  select {
+    min-height: 48px;
+  }
+  .icon-button {
+    width: 48px;
+    height: 48px;
+  }
+  .button,
+  .page-heading > .button {
+    font-size: 14px;
+    border-radius: 12px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  .field > label,
+  .field > span,
+  .task-meta,
+  .task-meta time,
+  .course-meta,
+  .notice,
+  .settings-note,
+  .filter-row select,
+  .theme-picker button > span {
+    font-size: 14px;
+  }
+  .task-title {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .task-row {
+    gap: 8px;
+    padding: 14px 0;
+  }
+  .check-button {
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+  }
+  .task-content {
+    min-width: 0;
+  }
+  .priority {
+    min-width: 18px;
+  }
+  .task-filters .segmented {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .task-filters .segmented button {
+    min-height: 48px;
+    padding: 8px 6px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .filter-row {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .filter-row select {
+    flex: 1 1 110px;
+    min-width: 0;
+  }
+  .bulk-toolbar {
+    justify-content: flex-start;
+  }
+  .bulk-toolbar .button {
+    padding: 10px;
+  }
+  .task-row:has(.bulk-check) {
+    gap: 3px;
+  }
+  .task-row:has(.bulk-check) .check-button {
+    width: 38px;
+    min-width: 38px;
+  }
+  :root[data-platform='android'] .topbar {
+    height: 58px;
+    padding: 0 18px;
+    border: 0;
+  }
+  :root[data-platform='android'] main {
+    padding: 20px 20px 24px;
+  }
+  :root[data-platform='android'] .dashboard-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  :root[data-platform='android'] .dashboard-main {
+    gap: 18px;
+  }
+  :root[data-platform='android'] .dashboard-aside {
+    gap: 18px;
+  }
+  :root[data-platform='android'] .panel {
+    padding: 20px;
+  }
+  :root[data-platform='android'] .bottom-nav {
+    padding-top: 9px;
+    box-shadow: 0 -5px 20px #30203b04;
+  }
+  :root[data-platform='android'] .bottom-nav a {
+    min-height: 52px;
+    gap: 6px;
+  }
+  :root[data-platform='android'] .bottom-nav a.nav-active svg {
+    stroke-width: 2.4;
+  }
+  :root[data-platform='android'] .app-footer {
+    visibility: hidden;
+  }
+  :root[data-platform='android'] .next-course {
+    padding: 4px 0;
+  }
+  :root[data-platform='android'] .next-course h3 {
+    font-size: 22px;
+    letter-spacing: -0.5px;
+  }
+  :root[data-platform='android'] .status-label {
+    font-size: 14px;
+  }
+  :root[data-platform='android'] .focus-card {
+    min-height: 170px;
+    background: var(--accent-soft);
+    padding: 22px;
+    border-radius: 20px;
+  }
+  :root[data-platform='android'] .focus-symbol {
+    display: none;
+  }
+  :root[data-platform='android'] .focus-card h2 {
+    font-size: 42px;
+    letter-spacing: -1px;
+  }
+  .agenda-day .section-title {
+    gap: 8px;
+  }
+  .agenda-day .section-title h2 {
+    font-size: 18px;
+  }
+  .agenda-lesson {
+    gap: 15px;
+    padding: 18px 14px;
+  }
+  .agenda-state {
+    font-size: 14px;
+  }
+  .agenda-day .muted {
+    font-size: 14px;
+  }
+  .timetable {
+    min-width: 690px !important;
+  }
+  .period-column {
+    position: sticky;
+    left: 0;
+    z-index: 4;
+    background: var(--surface);
+    box-shadow: 3px 0 8px #00000006;
+  }
+  .lesson strong,
+  .lesson span {
+    font-size: 14px;
+  }
+  .timetable-scroll {
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+  }
+  .timetable-column {
+    scroll-snap-align: start;
+  }
+  .course-view-switch {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .course-view-switch button {
+    min-height: 48px;
+    font-size: 15px;
+  }
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .week-control {
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .week-control input {
+    max-width: 175px;
+  }
+  .plan-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .plan-row .inline-actions {
+    margin-left: auto;
+    gap: 0;
+  }
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .form-grid.three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .import-preview article {
+    flex-wrap: wrap;
+    gap: 7px;
+  }
+  .import-preview article strong {
+    flex-basis: 100%;
+  }
+  .import-steps {
+    line-height: 1.8;
+  }
+  .modal {
+    border-radius: 22px;
+  }
+  .modal-header {
+    align-items: center;
+    gap: 8px;
+  }
+  .modal-header h2 {
+    font-size: 21px;
+  }
+  .settings-layout > div > .panel {
+    margin-bottom: 18px;
+  }
+  .settings-links button {
+    min-height: 60px;
+  }
+  .settings-note {
+    line-height: 1.7;
+  }
+  .focus-today {
+    gap: 10px;
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .task-row {
+    padding: 0;
+    min-height: 80px;
+  }
+  .task-content {
+    padding: 16px 0;
+  }
+  .section-title .text-button {
+    font-size: 14px;
+  }
+  :root[data-platform='android'] .dashboard-grid {
+    gap: 0;
+  }
+  :root[data-platform='android'] .dashboard-main .panel {
+    margin-bottom: 18px;
+  }
+  :root[data-platform='android'] .next-course .course-marker {
+    height: 94px;
+  }
+  :root[data-platform='android'] .focus-card {
+    min-height: 150px;
+  }
+}

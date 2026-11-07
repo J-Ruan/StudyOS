@@ -340,14 +340,20 @@ test('自习安排使用课程与任务空闲区间，取消后归还时间', as
     d.setDate(d.getDate() + 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   });
+  await route(page, '/schedule/tasks');
+  await page.locator('.task-content').filter({ hasText: '安排一段自习' }).click();
+  await page.getByLabel('截止时间').fill(`${tomorrow}T23:59`);
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await route(page, '/schedule/plan');
   await page.getByLabel('自习日期').fill(tomorrow);
   await page.locator('.free-slot').first().click();
   await page.getByLabel('任务', { exact: true }).selectOption({ label: '安排一段自习 · 25 分钟' });
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.locator('.plan-row')).toContainText('安排一段自习');
-  const t = (await records(page, 'tasks')).find((t) => t.title === '安排一段自习')!;
-  expect(Number(t.scheduledEnd) - Number(t.scheduledStart)).toBe(25 * 60000);
+  const plan = (await records(page, 'plans')).find((p) => p.title === '安排一段自习')!;
+  expect(Number(plan.end) - Number(plan.start)).toBe(25 * 60000);
   await page.getByRole('button', { name: '取消自习安排' }).click();
+  await page.getByRole('button', { name: '确认', exact: true }).click();
   await expect(page.getByText('还没有安排自习')).toBeVisible();
 });
 

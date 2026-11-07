@@ -11,6 +11,7 @@ import type {
   Timer,
   Material,
   Review,
+  StudyPlan,
 } from './models';
 export class StudyDB extends Dexie {
   courses!: EntityTable<Course, 'id'>;
@@ -24,6 +25,7 @@ export class StudyDB extends Dexie {
   timer!: EntityTable<Timer, 'id'>;
   materials!: EntityTable<Material, 'id'>;
   reviews!: EntityTable<Review, 'id'>;
+  plans!: EntityTable<StudyPlan, 'id'>;
   constructor(name = 'studyos') {
     super(name);
     this.version(1).stores({
@@ -65,6 +67,28 @@ export class StudyDB extends Dexie {
         );
         await tx.table('checks').clear();
         await tx.table('checks').bulkPut([...unique.values()]);
+      });
+    this.version(3)
+      .stores({
+        tasks: 'id,courseId,due,&repeatKey,priority',
+        exams: 'id,at,courseId',
+        sessions: 'id,start,end,taskId,courseId',
+        plans: 'id,start,end,taskId,courseId',
+      })
+      .upgrade(async (tx) => {
+        const tasks = await tx.table('tasks').toArray();
+        for (const t of tasks) {
+          if (Number.isFinite(t.scheduledStart) && t.scheduledEnd > t.scheduledStart)
+            await tx.table('plans').put({
+              id: `legacy:${t.id}`,
+              taskId: t.id,
+              courseId: t.courseId,
+              title: t.title,
+              start: t.scheduledStart,
+              end: t.scheduledEnd,
+              done: t.done,
+            });
+        }
       });
   }
 }

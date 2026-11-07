@@ -26,6 +26,8 @@ export const courseSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   slots: z.array(slotSchema).min(1).max(100),
 });
+export const reminderSchema = z.object({ kind: z.enum(['before', 'at']), value: stamp });
+export type Reminder = z.infer<typeof reminderSchema>;
 export const taskSchema = z
   .object({
     id: key,
@@ -40,6 +42,7 @@ export const taskSchema = z
     completedAt: stamp.optional(),
     subtasks: z.array(z.object({ id: key, title: name, done: z.boolean() })).max(200),
     repeat: z.enum(['none', 'daily', 'weekly', 'monthly']),
+    reminders: z.array(reminderSchema).max(8).optional(),
     repeatKey: key.optional(),
     parentId: key.optional(),
     scheduledStart: stamp.optional(),
@@ -76,6 +79,7 @@ export const examSchema = z.object({
   notes: text,
   taskIds: z.array(key),
   archived: z.boolean(),
+  reminders: z.array(reminderSchema).max(8).optional(),
 });
 export const habitSchema = z.object({
   id: key,
@@ -128,12 +132,60 @@ export const timerSchema = z.object({
   courseId: key.optional(),
   taskId: key.optional(),
   segments: z.array(segmentSchema).max(10000),
+  cycle: z
+    .object({
+      root: key,
+      round: z.number().int().min(1).max(12),
+      rounds: z.number().int().min(1).max(12),
+      focus: minute,
+      short: minute,
+      long: minute,
+      auto: z.boolean(),
+    })
+    .optional(),
 });
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+export const preferencesSchema = z.object({
+  accent: z.enum(['purple', 'rose', 'teal', 'blue']).default('purple'),
+  startPage: z.enum(['/', '/schedule', '/tasks', '/focus']).default('/'),
+  focusMinutes: z.number().int().min(1).max(180).default(25),
+  shortMinutes: z.number().int().min(1).max(60).default(5),
+  longMinutes: z.number().int().min(1).max(120).default(15),
+  rounds: z.number().int().min(1).max(12).default(4),
+  autoAdvance: z.boolean().default(false),
+  vibrate: z.boolean().default(false),
+  taskNotifications: z.boolean().default(false),
+  examNotifications: z.boolean().default(false),
+  focusNotifications: z.boolean().default(false),
+  taskLead: z.number().int().min(0).max(525600).default(60),
+  examLead: z.number().int().min(0).max(525600).default(1440),
+  studyStart: clock.default('08:00'),
+  studyEnd: clock.default('22:00'),
+});
+export type Preferences = z.infer<typeof preferencesSchema>;
+export const preferences = (settings: { preferences?: Partial<Preferences> }) =>
+  preferencesSchema.parse(settings.preferences ?? {});
+export const planSchema = z
+  .object({
+    id: key,
+    title: name,
+    taskId: key.optional(),
+    courseId: key.optional(),
+    start: stamp,
+    end: stamp,
+    done: z.boolean(),
+  })
+  .refine(
+    (p) => p.end > p.start && p.end - p.start <= 86400000,
+    '自习时段须在 24 小时内且结束晚于开始',
+  );
+export type StudyPlan = z.infer<typeof planSchema>;
 export const settingsSchema = z.object({
   id: z.literal('main'),
   theme: z.enum(['light', 'dark', 'system']),
   sound: z.boolean(),
+  preferences: preferencesSchema.optional(),
+  lastBackupAt: stamp.optional(),
   semester: z
     .object({
       name,

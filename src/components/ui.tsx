@@ -241,8 +241,11 @@ export function SaveForm({
   const [busy, setBusy] = useState(false),
     [dirty, setDirty] = useState(false),
     [error, setError] = useState('');
+  const saving = useRef(false);
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (saving.current) return;
+    saving.current = true;
     setError('');
     setBusy(true);
     try {
@@ -257,6 +260,7 @@ export function SaveForm({
             : '保存失败，请重试',
       );
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }

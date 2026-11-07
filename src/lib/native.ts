@@ -82,7 +82,8 @@ export async function handleNativeBack(confirmDiscard: () => Promise<boolean>) {
   if (document.querySelector('form[data-unsaved="true"]') && !(await confirmDiscard())) return;
   const path = location.hash.slice(1) || '/';
   const parts = path.split('/').filter(Boolean);
-  if (parts.length > 1) location.hash = `/${parts.slice(0, -1).join('/')}`;
+  if (path === '/stats') location.hash = '/me';
+  else if (parts.length > 1) location.hash = `/${parts.slice(0, -1).join('/')}`;
   else await App.minimizeApp();
 }
 

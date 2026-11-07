@@ -14,3 +14,5 @@ dist-android/
 *.keystore
 
 android-device-results/
+
+legacy-apk/

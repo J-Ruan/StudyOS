@@ -1,40 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Play, Pause, Square, Volume2, VolumeX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { db } from '../lib/db';
 import { useStore, useUI, go } from '../lib/context';
-import { elapsedSeconds, startTimer, pauseTimer, resumeTimer, finishTimer } from '../lib/actions';
-import { type Timer } from '../lib/models';
+import {
+  elapsedSeconds,
+  startTimer,
+  pauseTimer,
+  resumeTimer,
+  finishTimer,
+  advanceTimer,
+  completeTask,
+} from '../lib/actions';
+import { preferences, type Timer } from '../lib/models';
 import { dailySeconds } from '../lib/logic';
 import { duration, fullDate, timerText, localDate } from '../lib/time';
 import { Button, IconButton, Tabs, Modal, Field, Empty } from '../components/ui';
 import { NATIVE_RESUME_EVENT } from '../lib/native';
-let audio: AudioContext | undefined;
-function enableSound() {
-  try {
-    audio ??= new AudioContext();
-    void audio.resume();
-  } catch {
-    /* Sound is optional on restricted browsers. */
-  }
-}
-function chime() {
-  if (!audio) return;
-  const osc = audio.createOscillator(),
-    gain = audio.createGain();
-  osc.connect(gain);
-  gain.connect(audio.destination);
-  osc.frequency.value = 660;
-  gain.gain.setValueAtTime(0.15, audio.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.8);
-  osc.start();
-  osc.stop(audio.currentTime + 0.8);
-}
+import { enableFocusSound as enableSound, chime } from '../lib/sound';
 export default function Focus({ path }: { path: string }) {
   const d = useStore(),
     ui = useUI();
   const tab = path.includes('history') ? 'history' : 'timer';
+  const prefs = preferences(d.settings);
+  const selectedTask = d.tasks.find((t) => t.id === ui.focusTask);
+  const [complete, setComplete] = useState(false);
   const [mode, setMode] = useState<Timer['mode']>('pomodoro'),
-    [minutes, setMinutes] = useState(45),
+    [minutes, setMinutes] = useState(selectedTask?.estimate ?? 45),
     [courseId, setCourse] = useState(ui.focusCourse ?? ''),
     [taskId, setTask] = useState(ui.focusTask ?? ''),
     [now, setNow] = useState(Date.now()),
@@ -43,7 +34,9 @@ export default function Focus({ path }: { path: string }) {
   const t = d.timer;
   useEffect(() => {
     const update = () => setNow(Date.now());
-    const i = setInterval(() => setNow(Date.now()), 250);
+    const i = setInterval(() => {
+      if (!document.hidden) setNow(Date.now());
+    }, 1000);
     window.addEventListener(NATIVE_RESUME_EVENT, update);
     return () => {
       clearInterval(i);
@@ -52,11 +45,11 @@ export default function Focus({ path }: { path: string }) {
   }, []);
   const goal =
     mode === 'pomodoro'
-      ? 25 * 60
+      ? prefs.focusMinutes * 60
       : mode === 'short'
-        ? 5 * 60
+        ? prefs.shortMinutes * 60
         : mode === 'long'
-          ? 15 * 60
+          ? prefs.longMinutes * 60
           : minutes * 60;
   const elapsed = t ? elapsedSeconds(t, now) : 0;
   const remaining = t
@@ -67,7 +60,7 @@ export default function Focus({ path }: { path: string }) {
       ? 0
       : goal;
   const progress = t && t.mode !== 'stopwatch' ? Math.min(1, elapsed / t.goal) : 0;
-  const todaySeconds = dailySeconds(d.sessions).get(localDate()) ?? 0;
+  const todaySeconds = useMemo(() => dailySeconds(d.sessions).get(localDate()) ?? 0, [d.sessions]);
   const perform = async (action: () => Promise<unknown>) => {
     try {
       await action();
@@ -123,6 +116,24 @@ export default function Focus({ path }: { path: string }) {
               </button>
             ))}
           </div>
+          {!t && selectedTask && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setMode('custom');
+                setMinutes(selectedTask.estimate);
+              }}
+            >
+              使用任务预计 {selectedTask.estimate} 分钟
+            </Button>
+          )}
+          {t?.cycle && (
+            <p className="cycle-stage">
+              第 {t.cycle.round} / {t.cycle.rounds} 轮 ·{' '}
+              {t.mode === 'pomodoro' ? '专注' : t.mode === 'short' ? '短休息' : '长休息'}
+              {!t.running ? ' · 待继续' : ''}
+            </p>
+          )}
           {!t && mode === 'custom' && (
             <label className="custom-duration">
               <input
@@ -209,7 +220,13 @@ export default function Focus({ path }: { path: string }) {
                   }
                   enableSound();
                   void perform(() =>
-                    startTimer(mode, goal, courseId || undefined, taskId || undefined),
+                    startTimer(
+                      mode,
+                      goal,
+                      courseId || undefined,
+                      taskId || undefined,
+                      mode === 'pomodoro',
+                    ),
                   );
                 }}
               >
@@ -273,6 +290,16 @@ export default function Focus({ path }: { path: string }) {
               placeholder="这次完成了什么？"
             />
           </Field>
+          {t?.taskId && (
+            <label className="switch-row">
+              <span>同时完成关联任务</span>
+              <input
+                type="checkbox"
+                checked={complete}
+                onChange={(e) => setComplete(e.target.checked)}
+              />
+            </label>
+          )}
           <div className="form-footer">
             <Button
               variant="danger"
@@ -290,7 +317,10 @@ export default function Focus({ path }: { path: string }) {
             <Button
               onClick={() =>
                 void perform(async () => {
+                  const task = t?.taskId;
                   const result = await finishTimer(true, note, t?.token);
+                  if (complete && task && result?.recorded) await completeTask(task);
+                  setComplete(false);
                   setEnding(false);
                   setNote('');
                   ui.notify(result?.recorded ? '学习记录已保存' : '计时已结束，休息不计入学习');
@@ -395,6 +425,14 @@ export function TimerRuntime() {
         return;
       finishing.current = true;
       try {
+        if (t.cycle) {
+          const result = await advanceTimer(t.token, now);
+          if (result?.advanced) {
+            if (d.settings.sound) chime();
+            ui.notify(result.completed ? '本组番茄已完成' : '阶段已完成，学习时间已保存');
+          }
+          return;
+        }
         const result = await finishTimer(true, '', t.token, now);
         if (result) {
           if (d.settings.sound) chime();
