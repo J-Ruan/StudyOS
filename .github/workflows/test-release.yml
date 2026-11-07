@@ -1,0 +1,129 @@
+name: 发布 v1.2.0 测试 APK
+
+on:
+  push:
+    branches: [release/test-v1.2.0-1]
+    paths: [.github/workflows/test-release.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studyos-test-v1.2.0-1
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 发布已验证的 Debug 测试附件
+    if: github.repository == 'J-Ruan/StudyOS' && github.ref == 'refs/heads/release/test-v1.2.0-1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 53e842ac4ad213af23b1e417706f924e3e64e07b
+      SOURCE_RUN: '42386423317'
+      TEST_TAG: test-v1.2.0-1
+      DRAFT_ID: '437666139'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 53e842ac4ad213af23b1e417706f924e3e64e07b
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: 核对成功 CI、固定产物和未发布草稿
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" > "$RUNNER_TEMP/source-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" > "$RUNNER_TEMP/test-release.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/13579433040" > "$RUNNER_TEMP/apk-artifact.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/13580061464" > "$RUNNER_TEMP/web-artifact.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          load = lambda name: json.loads((root / name).read_text())
+          run = load('source-run.json')
+          assert str(run['id']) == os.environ['SOURCE_RUN']
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['head_sha'] == os.environ['SOURCE_SHA']
+          assert run['head_branch'] == 'main' and run['repository']['full_name'] == os.environ['GITHUB_REPOSITORY']
+          assert run['path'] == '.github/workflows/ci.yml'
+          for name, expected in [('apk-artifact.json', 'android-smoke-apk'), ('web-artifact.json', 'studyos-dist')]:
+              artifact = load(name)
+              assert artifact['name'] == expected and not artifact['expired']
+              assert str(artifact['workflow_run']['id']) == os.environ['SOURCE_RUN']
+              assert artifact['workflow_run']['head_sha'] == os.environ['SOURCE_SHA']
+          release = load('test-release.json')
+          assert release['tag_name'] == os.environ['TEST_TAG']
+          assert release['target_commitish'] == os.environ['SOURCE_SHA']
+          assert release['draft'] and release['prerelease'] and not release['assets']
+          assert 'Debug 测试 APK' in release['body']
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '13579433040'
+          run-id: '42386423317'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: apk/
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '13580061464'
+          run-id: '42386423317'
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: dist/
+      - name: 验证实际 APK 并生成测试附件与校验文件
+        run: |
+          node scripts/android-verify.mjs apk/app-debug.apk > "$RUNNER_TEMP/test-apk-validation.json"
+          python3 - <<'PY'
+          import hashlib, json, os, shutil, zipfile
+          from pathlib import Path
+          info = json.loads((Path(os.environ['RUNNER_TEMP']) / 'test-apk-validation.json').read_text())
+          assert info['debuggable'] is True and info['signatureVerified'] is True
+          assert info['version'] == '1.2.0' and info['versionCode'] == '120'
+          release = Path('release-files')
+          release.mkdir()
+          apk = release / 'StudyOS-v1.2.0-android-debug.apk'
+          shutil.copyfile('apk/app-debug.apk', apk)
+          archive = release / 'StudyOS-v1.2.0.zip'
+          with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              for path in sorted(Path('dist').rglob('*')):
+                  if path.is_file():
+                      assert not path.is_symlink()
+                      z.write(path, path.relative_to('dist').as_posix())
+          with zipfile.ZipFile(archive) as z:
+              assert z.testzip() is None
+              assert {'index.html', 'manifest.webmanifest', 'sw.js', 'icon-192.png', 'icon-512.png'} <= set(z.namelist())
+          files = [apk, archive]
+          checksums = ''.join(f'{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}\n' for p in files)
+          (release / 'SHA256SUMS.txt').write_text(checksums)
+          print(json.dumps(info, indent=2))
+          print(checksums)
+          PY
+      - name: 上传附件并发布独立 Pre-release
+        run: |
+          gh release upload "$TEST_TAG" release-files/StudyOS-v1.2.0-android-debug.apk release-files/StudyOS-v1.2.0.zip release-files/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$DRAFT_ID" > "$RUNNER_TEMP/uploaded-release.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          release = json.loads((Path(os.environ['RUNNER_TEMP']) / 'uploaded-release.json').read_text())
+          assert release['draft'] and release['prerelease']
+          assert release['tag_name'] == os.environ['TEST_TAG'] and release['target_commitish'] == os.environ['SOURCE_SHA']
+          assets = {a['name']: a for a in release['assets']}
+          files = list(Path('release-files').iterdir())
+          assert set(assets) == {p.name for p in files}
+          for path in files:
+              assert assets[path.name]['state'] == 'uploaded' and assets[path.name]['size'] == path.stat().st_size
+          PY
+          gh release edit "$TEST_TAG" --draft=false --prerelease --latest=false --repo "$GITHUB_REPOSITORY"
+          printf '测试版：%s\n源码：%s\nCI：%s\n' "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TEST_TAG" "$SOURCE_SHA" "$SOURCE_RUN" >> "$GITHUB_STEP_SUMMARY"
