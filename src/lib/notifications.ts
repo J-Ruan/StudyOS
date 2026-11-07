@@ -63,7 +63,7 @@ export function notificationPlan(data: ReminderData, now = Date.now()): LocalNot
       smallIcon: 'ic_stat_study',
       autoCancel: true,
       isExactNotification: false,
-      extra: { owner: OWNER, ...extra, stamp: `${at}:${title}:${body}:${channel}` },
+      extra: { owner: OWNER, at, ...extra, stamp: `${at}:${title}:${body}:${channel}` },
     });
   };
   if (p.taskNotifications)
@@ -73,6 +73,7 @@ export function notificationPlan(data: ReminderData, now = Date.now()): LocalNot
           route: '/tasks',
           kind: 'task',
           entity: t.id,
+          revision: JSON.stringify([t.title, t.due, t.reminders ?? null]),
         });
   if (p.examNotifications)
     for (const e of data.exams.filter((e) => !e.archived && e.at > now))
@@ -82,7 +83,12 @@ export function notificationPlan(data: ReminderData, now = Date.now()): LocalNot
           e.name,
           `考试 ${fullDate(e.at)}${e.room ? ` · ${e.room}` : ''}`,
           at,
-          { route: '/schedule/exams', kind: 'exam', entity: e.id },
+          {
+            route: '/schedule/exams',
+            kind: 'exam',
+            entity: e.id,
+            revision: JSON.stringify([e.name, e.at, e.reminders ?? null]),
+          },
         );
   const timer = data.timer;
   if (p.focusNotifications && timer?.running && timer.mode !== 'stopwatch') {
@@ -146,34 +152,51 @@ export function syncNotifications(data: ReminderData) {
       isExactNotification: exact,
       extra: { ...n.extra, stamp: `${n.extra.stamp}:${exact}` },
     }));
-    const { notifications: pending } = await LocalNotifications.getPending();
-    const ours = pending.filter((n) => n.extra?.owner === OWNER);
+    // Android 8.3 getPending also contains stored, already-triggered entries.
+    // Join this metadata to the actual shade API; shade entries have no `extra`.
+    const { notifications: stored } = await LocalNotifications.getPending();
+    const delivered = await LocalNotifications.getDeliveredNotifications();
+    const prefs = preferences(data.settings),
+      now = Date.now();
+    const ours = stored.filter((n) => n.extra?.owner === OWNER && n.id !== STATUS);
+    const invalid = (n: (typeof ours)[number]) => {
+      if (n.extra?.kind === 'task') {
+        const task = data.tasks.find((t) => t.id === n.extra.entity);
+        return (
+          !prefs.taskNotifications ||
+          !task ||
+          task.done ||
+          n.extra.revision !== JSON.stringify([task.title, task.due, task.reminders ?? null])
+        );
+      }
+      if (n.extra?.kind === 'exam') {
+        const exam = data.exams.find((e) => e.id === n.extra.entity);
+        return (
+          !prefs.examNotifications ||
+          !exam ||
+          exam.archived ||
+          n.extra.revision !== JSON.stringify([exam.name, exam.at, exam.reminders ?? null])
+        );
+      }
+      return n.extra?.kind === 'focus' && !prefs.focusNotifications;
+    };
+    const expiredOrChanged = ours.filter((n) => invalid(n));
     const cancel = ours.filter(
-      (n) => !desired.some((d) => d.id === n.id && d.extra.stamp === n.extra?.stamp),
+      (n) =>
+        invalid(n) ||
+        (Number(n.extra.at) > now &&
+          !desired.some((d) => d.id === n.id && d.extra.stamp === n.extra.stamp)),
     );
     if (cancel.length)
       await LocalNotifications.cancel({ notifications: cancel.map((n) => ({ id: n.id })) });
+    if (expiredOrChanged.length)
+      await LocalNotifications.removeDeliveredNotificationsById({
+        ids: expiredOrChanged.map((n) => n.id),
+      });
     const fresh = desired.filter(
-      (n) => !ours.some((o) => o.id === n.id && o.extra?.stamp === n.extra.stamp),
+      (n) => !ours.some((o) => o.id === n.id && o.extra.stamp === n.extra.stamp && !invalid(o)),
     );
     if (fresh.length) await LocalNotifications.schedule({ notifications: fresh });
-    // Remove stale delivered reminders for changed/completed/deleted entities.
-    // Android's legacy delivered API returns system `data`, not our `extra`.
-    // The pinned 8.3 API joins active IDs to stored notification metadata.
-    const delivered = await LocalNotifications.getAll({ state: 'TRIGGERED' });
-    const stale = delivered.notifications.filter(
-      (n) =>
-        n.extra?.owner === OWNER &&
-        n.id !== STATUS &&
-        ((n.extra?.kind === 'task' &&
-          !data.tasks.some((t) => t.id === n.extra.entity && !t.done)) ||
-          (n.extra?.kind === 'exam' &&
-            !data.exams.some((e) => e.id === n.extra.entity && !e.archived)) ||
-          (n.extra?.kind === 'focus' &&
-            (!data.timer || !preferences(data.settings).focusNotifications))),
-    );
-    if (stale.length)
-      await LocalNotifications.removeDeliveredNotificationsById({ ids: stale.map((n) => n.id) });
     const t = data.timer;
     if (t && preferences(data.settings).focusNotifications) {
       const statusKey = `${t.token}:${t.running}:${t.anchor}:${t.elapsed}`;
@@ -223,9 +246,7 @@ export function syncNotifications(data: ReminderData) {
       }
     } else {
       await LocalNotifications.cancel({ notifications: [{ id: STATUS }] });
-      await LocalNotifications.removeDeliveredNotificationsById({
-        ids: delivered.notifications.filter((n) => n.id === STATUS).map((n) => n.id),
-      });
+      await LocalNotifications.removeDeliveredNotificationsById({ ids: [STATUS] });
       previousStatus = '';
     }
   };

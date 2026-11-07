@@ -26,7 +26,7 @@ vi.mock('@capacitor/local-notifications', () => ({
     checkPermissions: mock.permission,
     checkExactNotificationSetting: mock.exact,
     getPending: mock.pending,
-    getAll: mock.delivered,
+    getDeliveredNotifications: mock.delivered,
     schedule: mock.schedule,
     cancel: mock.cancel,
     removeDeliveredNotificationsById: mock.remove,
@@ -191,7 +191,51 @@ it('finite automatic group pre-schedules each phase; no break contributes a stud
 
 it('completed tasks remove an already posted native reminder using stored triggered metadata', async () => {
   const posted = notificationPlan({ tasks: [task], exams: [], settings }, now);
-  mock.delivered.mockResolvedValue({ notifications: posted });
+  mock.pending.mockResolvedValue({ notifications: posted });
+  mock.delivered.mockResolvedValue({
+    notifications: posted.map((n) => ({
+      id: n.id,
+      title: n.title,
+      data: { 'android.title': n.title },
+    })),
+  });
   await syncNotifications({ tasks: [{ ...task, done: true }], exams: [], settings });
   expect(mock.remove).toHaveBeenCalledWith({ ids: [posted[0].id] });
+});
+
+it('retains due focus alarms and posted completion after JS has finished the timer', async () => {
+  const posted = {
+    id: 7654321,
+    title: '专注完成',
+    body: '点击返回专注',
+    extra: { owner: 'StudyOS-v3', kind: 'focus', at: now - 1000, stamp: 'past' },
+  };
+  mock.pending.mockResolvedValue({ notifications: [posted] });
+  mock.delivered.mockResolvedValue({
+    notifications: [{ id: posted.id, title: posted.title, data: {} }],
+  });
+  await syncNotifications({ tasks: [], exams: [], settings });
+  expect(
+    mock.cancel.mock.calls.flatMap((c) => c[0].notifications).some((n) => n.id === posted.id),
+  ).toBe(false);
+  expect(mock.remove.mock.calls.flatMap((c) => c[0].ids).includes(posted.id)).toBe(false);
+});
+
+it('exam reminder refresh is idempotent with the native stored metadata format', async () => {
+  const exam = {
+    id: 'e',
+    name: '考试',
+    kind: 'final' as const,
+    at: now + 8 * 86400000,
+    room: 'A203',
+    notes: '',
+    taskIds: [],
+    archived: false,
+  };
+  const data = { tasks: [], exams: [exam], settings };
+  await syncNotifications(data);
+  const sent = mock.schedule.mock.calls[0][0].notifications;
+  mock.pending.mockResolvedValue({ notifications: sent });
+  await syncNotifications(data);
+  expect(mock.schedule).toHaveBeenCalledOnce();
 });
